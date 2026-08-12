@@ -239,6 +239,68 @@ async def test_registration_error_exits(tmp_path):
             await run("on")
 
 
+# ── run() — HDMI input switching ─────────────────────────────────────────────
+
+async def test_on_without_input_no_switch(tmp_path):
+    ip, key = setup_files(tmp_path)
+    input_file = tmp_path / "tv_input"          # not created
+    ws = make_ws(REGISTERED, SUCCESS)
+    with patch.object(lgtv, "IP_FILE", ip), patch.object(lgtv, "KEY_FILE", key), \
+         patch.object(lgtv, "INPUT_FILE", input_file), \
+         patch("lgtv.ws_connect", AsyncMock(return_value=ws)):
+        await run("on")
+    assert ws.send.call_count == 2   # register + turnOnScreen only
+
+
+async def test_on_uses_configured_input(tmp_path):
+    ip, key = setup_files(tmp_path)
+    input_file = tmp_path / "tv_input"
+    input_file.write_text("HDMI3\n")
+    ws = make_ws(REGISTERED, SUCCESS, SUCCESS)
+    with patch.object(lgtv, "IP_FILE", ip), patch.object(lgtv, "KEY_FILE", key), \
+         patch.object(lgtv, "INPUT_FILE", input_file), \
+         patch.object(lgtv, "INPUT_SWITCH_DELAY", 0), \
+         patch("lgtv.ws_connect", AsyncMock(return_value=ws)):
+        await run("on")
+    switch = json.loads(ws.send.call_args_list[2].args[0])
+    assert switch["uri"] == "ssap://tv/switchInput"
+    assert switch["payload"] == {"inputId": "HDMI3"}
+
+
+async def test_on_cli_arg_overrides_config(tmp_path):
+    ip, key = setup_files(tmp_path)
+    input_file = tmp_path / "tv_input"
+    input_file.write_text("HDMI3\n")
+    ws = make_ws(REGISTERED, SUCCESS, SUCCESS)
+    with patch.object(lgtv, "IP_FILE", ip), patch.object(lgtv, "KEY_FILE", key), \
+         patch.object(lgtv, "INPUT_FILE", input_file), \
+         patch.object(lgtv, "INPUT_SWITCH_DELAY", 0), \
+         patch("lgtv.ws_connect", AsyncMock(return_value=ws)):
+        await run("on", "HDMI2")
+    switch = json.loads(ws.send.call_args_list[2].args[0])
+    assert switch["payload"] == {"inputId": "HDMI2"}
+
+
+async def test_switch_input_102_not_fatal(tmp_path):
+    """Input switch errorCode -102 (already on that input) is not an error."""
+    ip, key = setup_files(tmp_path)
+    ws = make_ws(REGISTERED, SUCCESS, ALREADY)
+    with patch.object(lgtv, "IP_FILE", ip), patch.object(lgtv, "KEY_FILE", key), \
+         patch.object(lgtv, "INPUT_SWITCH_DELAY", 0), \
+         patch("lgtv.ws_connect", AsyncMock(return_value=ws)):
+        await run("on", "HDMI3")   # must not raise
+
+
+async def test_switch_input_error_exits(tmp_path):
+    ip, key = setup_files(tmp_path)
+    ws = make_ws(REGISTERED, SUCCESS, ERROR)
+    with patch.object(lgtv, "IP_FILE", ip), patch.object(lgtv, "KEY_FILE", key), \
+         patch.object(lgtv, "INPUT_SWITCH_DELAY", 0), \
+         patch("lgtv.ws_connect", AsyncMock(return_value=ws)):
+        with pytest.raises(SystemExit, match="Input switch failed"):
+            await run("on", "HDMI3")
+
+
 # ── run() — missing files ─────────────────────────────────────────────────────
 
 async def test_missing_ip_exits(tmp_path):
@@ -498,21 +560,86 @@ def test_main_on(monkeypatch):
     monkeypatch.setattr("sys.argv", ["lgtv.py", "on"])
     with patch("lgtv.run", AsyncMock()) as mock_run:
         lgtv.main()
-    mock_run.assert_called_once_with("on")
+    mock_run.assert_called_once_with("on", None)
+
+
+def test_main_on_with_input(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lgtv.py", "on", "HDMI3"])
+    with patch("lgtv.run", AsyncMock()) as mock_run:
+        lgtv.main()
+    mock_run.assert_called_once_with("on", "HDMI3")
+
+
+def test_main_config(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lgtv.py", "config", "--show"])
+    with patch("lgtv.config_command") as mock_cfg:
+        lgtv.main()
+    mock_cfg.assert_called_once_with(["--show"])
 
 
 def test_main_off(monkeypatch):
     monkeypatch.setattr("sys.argv", ["lgtv.py", "off"])
     with patch("lgtv.run", AsyncMock()) as mock_run:
         lgtv.main()
-    mock_run.assert_called_once_with("off")
+    mock_run.assert_called_once_with("off", None)
 
 
 def test_main_pair(monkeypatch):
     monkeypatch.setattr("sys.argv", ["lgtv.py", "pair"])
     with patch("lgtv.run", AsyncMock()) as mock_run:
         lgtv.main()
-    mock_run.assert_called_once_with("pair")
+    mock_run.assert_called_once_with("pair", None)
+
+
+# ── config_command ───────────────────────────────────────────────────────────
+
+def test_config_sets_ip_and_input(tmp_path):
+    ip = tmp_path / "tv_ip"
+    inp = tmp_path / "tv_input"
+    with patch.object(lgtv, "IP_FILE", ip), patch.object(lgtv, "INPUT_FILE", inp):
+        lgtv.config_command(["--ip", "192.168.1.50", "--input", "HDMI3"])
+    assert ip.read_text().strip() == "192.168.1.50"
+    assert inp.read_text().strip() == "HDMI3"
+
+
+def test_config_preserves_unset_values(tmp_path):
+    ip = tmp_path / "tv_ip"
+    ip.write_text("192.168.1.30\n")
+    inp = tmp_path / "tv_input"
+    inp.write_text("HDMI3\n")
+    with patch.object(lgtv, "IP_FILE", ip), patch.object(lgtv, "INPUT_FILE", inp):
+        lgtv.config_command(["--input", "HDMI2"])
+    assert ip.read_text().strip() == "192.168.1.30"   # untouched
+    assert inp.read_text().strip() == "HDMI2"
+
+
+def test_config_clears_input(tmp_path):
+    ip = tmp_path / "tv_ip"
+    ip.write_text("192.168.1.30\n")
+    inp = tmp_path / "tv_input"
+    inp.write_text("HDMI3\n")
+    with patch.object(lgtv, "IP_FILE", ip), patch.object(lgtv, "INPUT_FILE", inp):
+        lgtv.config_command(["--input", "none"])
+    assert not inp.exists()
+
+
+def test_config_show(tmp_path, capsys):
+    ip = tmp_path / "tv_ip"
+    ip.write_text("192.168.1.30\n")
+    inp = tmp_path / "tv_input"
+    inp.write_text("HDMI3\n")
+    with patch.object(lgtv, "IP_FILE", ip), patch.object(lgtv, "INPUT_FILE", inp):
+        lgtv.config_command(["--show"])
+    out = capsys.readouterr().out
+    assert "192.168.1.30" in out
+    assert "HDMI3" in out
+
+
+def test_config_bad_flag(tmp_path):
+    with patch.object(lgtv, "IP_FILE", tmp_path / "tv_ip"), \
+         patch.object(lgtv, "INPUT_FILE", tmp_path / "tv_input"):
+        with pytest.raises(SystemExit, match="Unknown config option"):
+            lgtv.config_command(["--bogus"])
 
 
 # ── lgtv-sleep.service ────────────────────────────────────────────────────────

@@ -44,12 +44,20 @@ The installer will:
 
 1. Check for `python3` and (if SELinux is Enforcing) `semanage`
 2. Ask for your TV's IP address
-3. Copy scripts to `/etc/lgtvcontrol/`
-4. Apply `bin_t` SELinux contexts so systemd can execute them
-5. Pair with the TV — a prompt appears on screen, press OK with your remote
-6. Detect and save the TV's MAC address for Wake-on-LAN or Wifi
-7. Install and enable the systemd services
-8. Offer to run a screen test (off 10s → on)
+3. Ask which HDMI input to switch to after power-on (default `HDMI3`, or `none`)
+4. Copy scripts to `/etc/lgtvcontrol/`
+5. Apply `bin_t` SELinux contexts so systemd can execute them
+6. Pair with the TV — a prompt appears on screen, press OK with your remote
+7. Detect and save the TV's MAC address for Wake-on-LAN or Wifi
+8. Install and enable the systemd services
+9. Offer to run a screen test (off 10s → on)
+
+You can also pass the HDMI input on the command line to skip the prompt:
+
+```bash
+./install.sh --input HDMI2        # use HDMI2 instead of the default HDMI3
+./install.sh --input none         # install without any input switching
+```
 
 ---
 
@@ -81,6 +89,7 @@ Scripts are installed to `/etc/lgtvcontrol/` and labelled `bin_t` via `semanage 
   lgtv-on.sh       ← calls: python3 /etc/lgtvcontrol/lgtv.py on
   lgtv-off.sh      ← calls: python3 /etc/lgtvcontrol/lgtv.py off
   tv_ip            ← TV IP address (written by installer)
+  tv_input         ← HDMI input to switch to after power-on (optional)
   tv_mac           ← TV MAC address (written by installer, used for WoL)
   client.key       ← auth key (written during pairing)
 
@@ -94,8 +103,10 @@ Scripts are installed to `/etc/lgtvcontrol/` and labelled `bin_t` via `semanage 
 
 `lgtv.py` connects over WebSocket (port 3001, TLS) and sends LG's SSAP protocol commands:
 
-- **on** → `ssap://com.webos.service.tvpower/power/turnOnScreen`
+- **on** → `ssap://com.webos.service.tvpower/power/turnOnScreen`, then if an input is configured, `ssap://tv/switchInput` with `{"inputId": <tv_input>}` to bring up the HDMI port (e.g. `HDMI3`)
 - **off** → `ssap://system/turnOff` with `standbyMode: active` (keeps network chip alive for WoL)
+
+The default input is read from `/etc/lgtvcontrol/tv_input`. You can override it for a single run without changing the config: `sudo python3 /etc/lgtvcontrol/lgtv.py on HDMI2`.
 
 Pairing is done once. The client key is saved to `/etc/lgtvcontrol/client.key` and sent with every subsequent connection.
 
@@ -112,6 +123,22 @@ The TV's MAC is detected automatically from the ARP cache during install.
 ### Suspend/resume
 
 `lgtv-sleep.service` runs `lgtv-off.sh` before the system suspends and `lgtv-on.sh` after it wakes. It uses `RemainAfterExit=yes` so systemd tracks the "active" state across the sleep cycle and calls `ExecStop` (the on command) on resume. It activates for all sleep states: suspend, hibernate, and hybrid-sleep.
+
+---
+
+## Changing the TV IP / HDMI input
+
+No need to re-run the installer. Use the built-in `config` command:
+
+```bash
+sudo python3 /etc/lgtvcontrol/lgtv.py config          # interactive (shows current values)
+sudo python3 /etc/lgtvcontrol/lgtv.py config --show   # just print current values
+sudo python3 /etc/lgtvcontrol/lgtv.py config --ip 192.168.1.42
+sudo python3 /etc/lgtvcontrol/lgtv.py config --input HDMI2
+sudo python3 /etc/lgtvcontrol/lgtv.py config --ip 192.168.1.42 --input none   # none/'' disables input switching
+```
+
+Changing the IP does **not** require re-pairing — the client key is stored by the TV and is not tied to the IP the connection comes from. Switching to a *different* TV requires `pair` again.
 
 ---
 
@@ -132,6 +159,9 @@ sudo systemctl start lgtv-shutdown.service
 
 # Re-pair if the TV rejects the stored key
 sudo python3 /etc/lgtvcontrol/lgtv.py pair
+
+# Change TV IP / HDMI input
+sudo python3 /etc/lgtvcontrol/lgtv.py config
 ```
 
 ---

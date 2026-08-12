@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_TV_IP="192.168.1.30"
+DEFAULT_HDMI_INPUT="HDMI3"
 CONF_DIR="/etc/lgtvcontrol"
 SERVICE_DIR="/etc/systemd/system"
 
@@ -45,7 +46,30 @@ run_test() {
     ok "Test complete — screen should be on."
 }
 
-if [[ "${1:-}" == "--test" ]]; then
+# ---------------------------------------------------------------------------
+# Args: --test (screen test) | --input <id> (HDMI input, skips the prompt)
+# ---------------------------------------------------------------------------
+INPUT_ARG=""
+RUN_TEST=0
+i=1
+while [[ $i -le $# ]]; do
+    case "${!i}" in
+        --test)
+            RUN_TEST=1
+            ;;
+        --input)
+            i=$((i + 1))
+            [[ $i -le $# ]] || die "--input requires a value (e.g. HDMI2 or none)"
+            INPUT_ARG="${!i}"
+            ;;
+        *)
+            die "Unknown option: ${!i}"
+            ;;
+    esac
+    i=$((i + 1))
+done
+
+if [[ "$RUN_TEST" -eq 1 ]]; then
     run_test
     exit 0
 fi
@@ -81,6 +105,23 @@ if [[ ! "$TV_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
 fi
 ok "TV IP: $TV_IP"
 
+if [[ -n "$INPUT_ARG" ]]; then
+    HDMI_INPUT="$INPUT_ARG"
+else
+    read -rp "$(printf "  HDMI input to switch to after power-on [${DEFAULT_HDMI_INPUT}] (or 'none'): ")" HDMI_INPUT
+    HDMI_INPUT="${HDMI_INPUT:-$DEFAULT_HDMI_INPUT}"
+fi
+if [[ "$HDMI_INPUT" == "none" ]]; then
+    HDMI_INPUT=""
+elif [[ -n "$HDMI_INPUT" && ! "$HDMI_INPUT" =~ ^[A-Za-z0-9./_-]+$ ]]; then
+    die "'$HDMI_INPUT' is not a valid input id"
+fi
+if [[ -n "$HDMI_INPUT" ]]; then
+    ok "HDMI input: $HDMI_INPUT"
+else
+    warn "No HDMI input configured — TV will not switch inputs on power-on"
+fi
+
 # ---------------------------------------------------------------------------
 # Confirm
 # ---------------------------------------------------------------------------
@@ -103,6 +144,15 @@ sudo mkdir -p "$CONF_DIR"
 echo "${TV_IP}" | sudo tee "$CONF_DIR/tv_ip" > /dev/null
 sudo chmod 644 "$CONF_DIR/tv_ip"
 ok "tv_ip"
+
+# Default HDMI input (read by lgtv.py at runtime; empty = no input switching)
+if [[ -n "$HDMI_INPUT" ]]; then
+    echo "$HDMI_INPUT" | sudo tee "$CONF_DIR/tv_input" > /dev/null
+    sudo chmod 644 "$CONF_DIR/tv_input"
+    ok "tv_input"
+else
+    sudo rm -f "$CONF_DIR/tv_input"   # clear any stale value from a previous install
+fi
 
 # lgtv.py
 sudo cp "$SCRIPT_DIR/scripts/lgtv.py" "$CONF_DIR/lgtv.py"
@@ -196,6 +246,7 @@ printf "  Useful commands:\n"
 printf "    Test:   ./install.sh --test\n"
 printf "    Logs:   journalctl -u lgtv-startup -u lgtv-shutdown -u lgtv-sleep -f\n"
 printf "    Re-pair: sudo python3 %s/lgtv.py pair\n" "$CONF_DIR"
+printf "    Change IP/input: sudo python3 %s/lgtv.py config\n" "$CONF_DIR"
 echo
 
 # shellcheck disable=SC2059

@@ -17,10 +17,14 @@ from pathlib import Path
 CONF_DIR = Path("/etc/lgtvcontrol")
 KEY_FILE = CONF_DIR / "client.key"
 IP_FILE  = CONF_DIR / "tv_ip"
+INPUT_FILE = CONF_DIR / "tv_input"
 MAC_FILE = CONF_DIR / "tv_mac"
 TIMEOUT        = 10
 RETRY_ATTEMPTS = 8   # max connection attempts at startup
 RETRY_DELAY    = 5   # seconds between attempts
+INPUT_SWITCH_DELAY = 1.0   # wait for the screen to come up before switching input
+
+USAGE = "Usage: lgtv.py pair|on [input_id]|off|config [--show|--ip IP|--input ID]"
 
 ENDPOINTS = {
     "on":  "com.webos.service.tvpower/power/turnOnScreen",
@@ -198,7 +202,19 @@ def _send_wol(mac: str, tv_ip: str) -> None:
         s.sendto(packet, (tv_ip, 9))
 
 
-async def _session(ws: WebSocket, mode: str, client_key: str | None) -> None:
+async def _request(ws: WebSocket, req_id: int, uri: str, payload: dict) -> dict:
+    """Send an SSAP request and return the parsed response message."""
+    await ws.send(json.dumps({
+        "id": req_id,
+        "type": "request",
+        "uri": f"ssap://{uri}",
+        "payload": payload,
+    }))
+    raw = await asyncio.wait_for(ws.recv(), timeout=TIMEOUT)
+    return json.loads(raw)
+
+
+async def _session(ws: WebSocket, mode: str, client_key: str | None, input_id: str | None = None) -> None:
     """Run the SSAP registration + command over an already-open WebSocket.
 
     Raises ConnectionError if the TV drops the connection mid-protocol so the
@@ -248,15 +264,7 @@ async def _session(ws: WebSocket, mode: str, client_key: str | None) -> None:
 
         uri = ENDPOINTS[mode]
         payload = {"standbyMode": "active"} if mode == "off" else {}
-        await ws.send(json.dumps({
-            "id": 1,
-            "type": "request",
-            "uri": f"ssap://{uri}",
-            "payload": payload,
-        }))
-
-        raw = await asyncio.wait_for(ws.recv(), timeout=TIMEOUT)
-        msg = json.loads(raw)
+        msg = await _request(ws, 1, uri, payload)
         payload = msg.get("payload", {})
         print(payload)
 
@@ -264,16 +272,29 @@ async def _session(ws: WebSocket, mode: str, client_key: str | None) -> None:
         if msg.get("type") == "error" and payload.get("errorCode") != "-102":
             sys.exit(f"Command failed: {payload}")
 
+        # After the screen is on, switch to the configured HDMI input.
+        # A CLI argument overrides the default stored in /etc/lgtvcontrol/tv_input.
+        if mode == "on" and input_id:
+            await asyncio.sleep(INPUT_SWITCH_DELAY)
+            switch = await _request(ws, 2, "tv/switchInput", {"inputId": input_id})
+            payload = switch.get("payload", {})
+            print(payload)
+            if switch.get("type") == "error" and payload.get("errorCode") != "-102":
+                sys.exit(f"Input switch failed: {payload}")
+
     except (asyncio.TimeoutError, TimeoutError) as e:
         sys.exit(f"Timed out waiting for TV response: {e}")
     # ConnectionError (TV sent close frame) propagates — caller will retry
 
 
-async def run(mode: str) -> None:
+async def run(mode: str, input_id: str | None = None) -> None:
     try:
         tv_ip = IP_FILE.read_text().strip()
     except FileNotFoundError:
         sys.exit(f"TV IP not configured — expected {IP_FILE}")
+
+    if mode == "on" and input_id is None and INPUT_FILE.exists():
+        input_id = INPUT_FILE.read_text().strip() or None
 
     client_key = None
     if mode != "pair":
@@ -298,7 +319,7 @@ async def run(mode: str) -> None:
             last_err = str(e)
         else:
             try:
-                await _session(ws, mode, client_key)
+                await _session(ws, mode, client_key, input_id)
                 return
             except ConnectionError as e:
                 last_err = str(e)
@@ -322,11 +343,94 @@ async def run(mode: str) -> None:
     sys.exit(f"Could not reach TV at {tv_ip} after {RETRY_ATTEMPTS} attempts: {last_err}")
 
 
+_UNSET = object()
+
+
+def _conf_value(path: Path) -> str:
+    return path.read_text().strip() if path.exists() else ""
+
+
+def config_command(args: list[str]) -> None:
+    """Show/change runtime config: TV IP and default HDMI input.
+
+    Flags: --show            print current values
+           --ip <addr>       set TV IP
+           --input <id>      set HDMI input ('none' or '' disables switching)
+    With no flags, prompts interactively.
+    """
+    show = False
+    ip_val = _UNSET
+    input_val = _UNSET
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--show":
+            show = True
+        elif arg == "--ip":
+            if i + 1 >= len(args):
+                sys.exit("--ip requires a value")
+            ip_val = args[i + 1]
+            i += 1
+        elif arg == "--input":
+            if i + 1 >= len(args):
+                sys.exit("--input requires a value")
+            input_val = args[i + 1]
+            i += 1
+        else:
+            sys.exit(f"Unknown config option: {arg}")
+        i += 1
+
+    if not show and ip_val is _UNSET and input_val is _UNSET:
+        new_ip = input(f"TV IP [{_conf_value(IP_FILE)}]: ").strip()
+        ip_val = new_ip or _conf_value(IP_FILE)
+        new_input = input(
+            f"HDMI input to switch to after power-on "
+            f"[{_conf_value(INPUT_FILE) or 'none'}]: "
+        ).strip()
+        if new_input == "none":
+            input_val = ""
+        elif new_input:
+            input_val = new_input
+        else:
+            input_val = _conf_value(INPUT_FILE)
+
+    if show:
+        print(f"tv_ip     = {_conf_value(IP_FILE) or '(not set)'}")
+        print(f"tv_input  = {_conf_value(INPUT_FILE) or '(none)'}")
+
+    if ip_val is not _UNSET:
+        ip = ip_val.strip()
+        if not ip:
+            sys.exit("TV IP cannot be empty")
+        IP_FILE.write_text(ip + "\n")
+        IP_FILE.chmod(0o644)
+        print(f"tv_ip set to {ip}")
+
+    if input_val is not _UNSET:
+        inp = input_val.strip()
+        inp = "" if inp == "none" else inp
+        if inp:
+            INPUT_FILE.write_text(inp + "\n")
+            INPUT_FILE.chmod(0o644)
+            print(f"tv_input set to {inp}")
+        else:
+            INPUT_FILE.unlink(missing_ok=True)
+            print("tv_input cleared — no input switching on power-on")
+
+
 def main() -> None:
     args = sys.argv[1:]
-    if not args or args[0] not in ("pair", "on", "off"):
-        sys.exit(f"Usage: {sys.argv[0]} pair|on|off")
-    asyncio.run(run(args[0]))
+    if not args:
+        sys.exit(USAGE)
+    mode = args[0]
+    if mode == "config":
+        config_command(args[1:])
+        return
+    if mode not in ("pair", "on", "off"):
+        sys.exit(USAGE)
+    input_id = args[1] if mode == "on" and len(args) > 1 else None
+    asyncio.run(run(mode, input_id))
 
 
 if __name__ == "__main__":
