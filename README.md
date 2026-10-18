@@ -179,11 +179,7 @@ For the ultimate native Steam Gamepad UI integration on Bazzite, a Decky Loader 
 
 To use the Decky plugin:
 1. Enable **Decky Loader** in **Bazzite Portal**.
-2. Copy or symlink `decky-plugin` into your Decky plugins directory:
-```bash
-mkdir -p ~/homebrew/plugins
-cp -r decky-plugin ~/homebrew/plugins/bazzite-lgtv
-```
+2. Run `./install.sh` — when Decky is detected it offers to install the plugin to `~/homebrew/plugins/bazzite-lgtv` and restarts Decky Loader. `./uninstall.sh` removes it again.
 
 ---
 

@@ -4,7 +4,6 @@
 import asyncio
 import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -28,6 +27,47 @@ IP_FILE = CONF_DIR / "tv_ip"
 INPUT_FILE = CONF_DIR / "tv_input"
 MAC_FILE = CONF_DIR / "tv_mac"
 KEY_FILE = CONF_DIR / "client.key"
+
+
+def _python() -> str:
+    """System interpreter for lgtv.py.
+
+    Inside Decky, sys.executable is the frozen PluginLoader binary, not Python,
+    so running it with lgtv.py would start a second loader instead.
+    """
+    return shutil.which("python3", path="/usr/bin:/usr/local/bin:/bin") or "python3"
+
+
+def _clean_env() -> dict:
+    """Environment without PyInstaller's bundled-library overrides.
+
+    PluginLoader is a PyInstaller binary; its LD_LIBRARY_PATH points at bundled
+    libs (incl. OpenSSL) that break the system python3's ssl module.
+    """
+    env = os.environ.copy()
+    orig = env.pop("LD_LIBRARY_PATH_ORIG", None)
+    if orig is not None:
+        env["LD_LIBRARY_PATH"] = orig
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
+    return env
+
+
+async def _run_lgtv(*args: str) -> dict:
+    script = LGTV_PY if LGTV_PY.exists() else Path(__file__).parent.parent / "scripts" / "lgtv.py"
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            _python(), str(script), *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=_clean_env(),
+        )
+        stdout, stderr = await proc.communicate()
+        out = (stdout.decode() + stderr.decode()).strip()
+        return {"success": proc.returncode == 0, "output": out}
+    except Exception as e:
+        logger.error(f"lgtv {' '.join(args)} error: {e}")
+        return {"success": False, "output": str(e)}
 
 
 def _read_file(p: Path) -> str:
@@ -79,38 +119,10 @@ class Plugin:
         return {"success": True, "sync_enabled": not DISABLED_FILE.exists()}
 
     async def power_on(self, input_id: str = "") -> dict:
-        script = LGTV_PY if LGTV_PY.exists() else Path(__file__).parent.parent / "scripts" / "lgtv.py"
-        cmd = [sys.executable, str(script), "on"]
-        if input_id:
-            cmd.append(input_id)
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await proc.communicate()
-            out = (stdout.decode() + stderr.decode()).strip()
-            return {"success": proc.returncode == 0, "output": out}
-        except Exception as e:
-            logger.error(f"power_on error: {e}")
-            return {"success": False, "output": str(e)}
+        return await _run_lgtv("on", *([input_id] if input_id else []))
 
     async def power_off(self) -> dict:
-        script = LGTV_PY if LGTV_PY.exists() else Path(__file__).parent.parent / "scripts" / "lgtv.py"
-        cmd = [sys.executable, str(script), "off"]
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await proc.communicate()
-            out = (stdout.decode() + stderr.decode()).strip()
-            return {"success": proc.returncode == 0, "output": out}
-        except Exception as e:
-            logger.error(f"power_off error: {e}")
-            return {"success": False, "output": str(e)}
+        return await _run_lgtv("off")
 
     async def test_screen(self) -> dict:
         async def _run_test():

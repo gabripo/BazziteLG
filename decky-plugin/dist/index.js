@@ -1,5 +1,37 @@
-import { definePlugin, PanelSection, PanelSectionRow, ToggleField, ButtonItem, Field } from "decky-frontend-lib";
-import { useState, useEffect, createElement as h } from "react";
+// Pre-built bundle equivalent to `npm run build` (@decky/rollup) for src/index.tsx.
+// Decky Loader provides React as the SP_REACT global and @decky/ui as DFL;
+// the @decky/api preamble below is what @decky/rollup inlines.
+
+const manifest = {"name":"LG TV Control"};
+const API_VERSION = 1;
+const internalAPIConnection = window.__DECKY_SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED_deckyLoaderAPIInit;
+if (!internalAPIConnection) {
+    throw new Error('[@decky/api]: Failed to connect to the loader as as the loader API was not initialized. This is likely a bug in Decky Loader.');
+}
+let api;
+try {
+    api = internalAPIConnection.connect(API_VERSION, manifest.name);
+}
+catch {
+    api = internalAPIConnection.connect(1, manifest.name);
+    console.warn(`[@decky/api] Requested API version ${API_VERSION} but the running loader only supports version 1. Some features may not work.`);
+}
+if (api._version != API_VERSION) {
+    console.warn(`[@decky/api] Requested API version ${API_VERSION} but the running loader only supports version ${api._version}. Some features may not work.`);
+}
+const call = api.call;
+const toaster = api.toaster;
+const definePlugin = (fn) => {
+    return (...args) => {
+        return fn(...args);
+    };
+};
+
+const { PanelSection, PanelSectionRow, ToggleField, ButtonItem, Field, staticClasses } = DFL;
+const { useState, useEffect, createElement: h } = SP_REACT;
+
+const TITLE = "LG TV Control";
+const toast = (body, title = TITLE) => toaster.toast({ title, body });
 
 const TvIcon = () =>
   h("svg", {
@@ -14,7 +46,7 @@ const TvIcon = () =>
     })
   );
 
-const Content = ({ serverAPI }) => {
+const Content = () => {
   const [syncEnabled, setSyncEnabled] = useState(true);
   const [tvIp, setTvIp] = useState("");
   const [tvMac, setTvMac] = useState("");
@@ -24,14 +56,12 @@ const Content = ({ serverAPI }) => {
 
   const fetchStatus = async () => {
     try {
-      const res = await serverAPI.callPluginMethod("get_status", {});
-      if (res.success && res.result) {
-        setSyncEnabled(Boolean(res.result.sync_enabled));
-        setTvIp(res.result.tv_ip || "(not set)");
-        setTvMac(res.result.tv_mac || "(not set)");
-        setTvInput(res.result.tv_input || "(none)");
-        setPaired(Boolean(res.result.paired));
-      }
+      const status = await call("get_status");
+      setSyncEnabled(Boolean(status.sync_enabled));
+      setTvIp(status.tv_ip || "(not set)");
+      setTvMac(status.tv_mac || "(not set)");
+      setTvInput(status.tv_input || "(none)");
+      setPaired(Boolean(status.paired));
     } catch (e) {
       console.error("[BazziteLG] Failed to fetch status:", e);
     }
@@ -44,14 +74,12 @@ const Content = ({ serverAPI }) => {
   const handleToggle = async (checked) => {
     setSyncEnabled(checked);
     try {
-      const res = await serverAPI.callPluginMethod("set_sync", { enabled: checked });
-      if (res.success && res.result) {
-        setSyncEnabled(res.result.sync_enabled);
-        serverAPI.toaster.toast({
-          title: "LG TV Control",
-          body: res.result.sync_enabled ? "Auto-sync is ACTIVATED" : "Auto-sync is DEACTIVATED",
-        });
+      const res = await call("set_sync", checked);
+      if (res.success) {
+        setSyncEnabled(res.sync_enabled);
+        toast(res.sync_enabled ? "Auto-sync is ACTIVATED" : "Auto-sync is DEACTIVATED");
       } else {
+        toast(res.error || "Could not change auto-sync", "LG TV Control Failed");
         fetchStatus();
       }
     } catch (e) {
@@ -62,30 +90,18 @@ const Content = ({ serverAPI }) => {
 
   const handlePower = async (mode) => {
     setBusy(true);
-    serverAPI.toaster.toast({
-      title: "LG TV Control",
-      body: `Sending TV ${mode.toUpperCase()} command...`,
-    });
+    toast(`Sending TV ${mode.toUpperCase()} command...`);
     try {
-      const res = await serverAPI.callPluginMethod(mode === "on" ? "power_on" : "power_off", {});
-      setBusy(false);
+      const res = await call(mode === "on" ? "power_on" : "power_off");
       if (res.success) {
-        serverAPI.toaster.toast({
-          title: "LG TV Control",
-          body: `TV ${mode.toUpperCase()} command sent successfully`,
-        });
+        toast(`TV ${mode.toUpperCase()} command sent successfully`);
       } else {
-        serverAPI.toaster.toast({
-          title: "LG TV Control Failed",
-          body: (res.result && res.result.output) || "Error communicating with TV",
-        });
+        toast(res.output || "Error communicating with TV", "LG TV Control Failed");
       }
     } catch (e) {
+      toast(String(e), "LG TV Control Error");
+    } finally {
       setBusy(false);
-      serverAPI.toaster.toast({
-        title: "LG TV Control Error",
-        body: String(e),
-      });
     }
   };
 
@@ -118,19 +134,19 @@ const Content = ({ serverAPI }) => {
     ),
     h(PanelSection, { title: "TV Info" },
       h(PanelSectionRow, null,
-        h(Field, { label: "State", value: syncEnabled ? "ACTIVATED" : "DEACTIVATED" })
+        h(Field, { label: "State" }, syncEnabled ? "ACTIVATED" : "DEACTIVATED")
       ),
       h(PanelSectionRow, null,
-        h(Field, { label: "TV IP Address", value: tvIp })
+        h(Field, { label: "TV IP Address" }, tvIp)
       ),
       h(PanelSectionRow, null,
-        h(Field, { label: "WoL MAC", value: tvMac })
+        h(Field, { label: "WoL MAC" }, tvMac)
       ),
       h(PanelSectionRow, null,
-        h(Field, { label: "HDMI Input", value: tvInput })
+        h(Field, { label: "HDMI Input" }, tvInput)
       ),
       h(PanelSectionRow, null,
-        h(Field, { label: "Client Key", value: paired ? "Paired" : "Missing key" })
+        h(Field, { label: "Client Key" }, paired ? "Paired" : "Missing key")
       ),
       h(PanelSectionRow, null,
         h(ButtonItem, {
@@ -142,12 +158,14 @@ const Content = ({ serverAPI }) => {
   );
 };
 
-export default definePlugin((serverAPI) => {
+var index = definePlugin(() => {
   return {
-    title: "LG TV Control",
-    name: "LG TV Control",
+    name: TITLE,
+    titleView: h("div", { className: staticClasses.Title }, TITLE),
     icon: h(TvIcon, null),
-    content: h(Content, { serverAPI }),
+    content: h(Content, null),
     onDismount() {},
   };
 });
+
+export { index as default };

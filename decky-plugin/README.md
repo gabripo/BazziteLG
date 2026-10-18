@@ -16,17 +16,19 @@ Control your LG OLED TV power and sync directly from the **Steam Quick Access Me
 1. **Enable Decky Loader via Bazzite Portal**:
    - Open **Bazzite Portal** in Desktop or Gaming mode and toggle **Decky Loader** ON.
 
-2. **Deploy the Plugin**:
-   Simply copy or symlink this folder to your Decky plugins directory:
+2. **Deploy the Plugin**: run `./install.sh` from the repository root and answer **Y** when it offers the Decky plugin.
+   To deploy by hand instead (`~/homebrew/plugins` is owned by root on Bazzite):
    ```bash
-   mkdir -p ~/homebrew/plugins
-   cp -r decky-plugin ~/homebrew/plugins/bazzite-lgtv
+   sudo mkdir -p ~/homebrew/plugins/bazzite-lgtv/dist
+   sudo cp decky-plugin/{plugin.json,package.json,main.py} ~/homebrew/plugins/bazzite-lgtv/
+   sudo cp decky-plugin/dist/index.js ~/homebrew/plugins/bazzite-lgtv/dist/
+   sudo systemctl restart plugin_loader
    ```
-   *(Or create a symlink for live development: `ln -s "$(pwd)/decky-plugin" ~/homebrew/plugins/bazzite-lgtv`)*
 
-3. Restart Steam or Decky Loader (`systemctl --user restart plugin_loader` or reboot).
+The main `lgtv` install must be present — the plugin drives `/etc/lgtvcontrol/lgtv.py`.
 
 No node/npm build step is required — a pre-bundled `dist/index.js` is included out of the box.
+To rebuild it from `src/index.tsx`: `npm install && npm run build` inside `decky-plugin/`.
 
 ## Structure
 

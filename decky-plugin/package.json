@@ -8,10 +8,13 @@
     "watch": "rollup -c -w"
   },
   "devDependencies": {
-    "@decky/rollup": "^1.0.3",
-    "@types/react": "^18.2.0",
-    "decky-frontend-lib": "^3.24.0",
-    "rollup": "^4.9.0",
-    "typescript": "^5.3.0"
+    "@decky/rollup": "^1.0.1",
+    "@decky/ui": "^4.7.0",
+    "@types/react": "18.3.3",
+    "rollup": "^4.22.5",
+    "typescript": "^5.6.2"
+  },
+  "dependencies": {
+    "@decky/api": "^1.1.2"
   }
 }

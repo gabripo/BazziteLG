@@ -61,13 +61,17 @@ cmd_exists update-desktop-database && update-desktop-database "$HOME/.local/shar
 ok "Desktop entries"
 
 # Remove Decky plugin from all standard locations
+decky_removed=0
 for candidate in "$HOME/homebrew/plugins/bazzite-lgtv" "/homebrew/plugins/bazzite-lgtv" "/var/homebrew/plugins/bazzite-lgtv"; do
     if [[ -d "$candidate" ]]; then
-        rm -rf "$candidate"
+        sudo rm -rf "$candidate"   # plugins/ is root-owned on Bazzite
         ok "Decky plugin removed ($candidate)"
+        decky_removed=1
     fi
 done
-systemctl --user restart plugin_loader 2>/dev/null || true
+if [[ "$decky_removed" -eq 1 ]] && systemctl is-active --quiet plugin_loader.service; then
+    sudo systemctl restart plugin_loader.service 2>/dev/null || true
+fi
 
 # Remove legacy artifacts from v1/v2 (bscpylgtv / SQLite)
 if [[ -d "$OLD_VENV_DIR" ]]; then

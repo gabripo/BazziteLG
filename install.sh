@@ -218,6 +218,28 @@ if [[ -f "$SCRIPT_DIR/desktop/lgtv-tray.desktop" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Decky Loader plugin (optional — only offered when Decky is installed)
+# ---------------------------------------------------------------------------
+DECKY_PLUGINS_DIR="$HOME/homebrew/plugins"
+DECKY_PLUGIN_DEST="$DECKY_PLUGINS_DIR/bazzite-lgtv"
+if [[ -d "$DECKY_PLUGINS_DIR" && -d "$SCRIPT_DIR/decky-plugin" ]]; then
+    read -rp "$(printf "  Decky Loader detected. Install the LG TV Quick Access plugin? [Y/n]: ")" decky_answer
+    decky_answer="${decky_answer:-Y}"
+    if [[ "$decky_answer" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+        # plugins/ is root-owned on Bazzite; ship only what Decky loads at runtime
+        sudo rm -rf "$DECKY_PLUGIN_DEST"
+        sudo mkdir -p "$DECKY_PLUGIN_DEST/dist"
+        sudo cp "$SCRIPT_DIR"/decky-plugin/{plugin.json,package.json,main.py,README.md} "$DECKY_PLUGIN_DEST/"
+        sudo cp "$SCRIPT_DIR/decky-plugin/dist/index.js" "$DECKY_PLUGIN_DEST/dist/"
+        ok "Decky plugin ($DECKY_PLUGIN_DEST)"
+        if systemctl is-active --quiet plugin_loader.service; then
+            sudo systemctl restart plugin_loader.service
+            ok "Decky Loader restarted"
+        fi
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # SELinux file contexts
 # ---------------------------------------------------------------------------
 if selinux_enforcing; then

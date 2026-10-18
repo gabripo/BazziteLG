@@ -1,15 +1,10 @@
-import {
-  definePlugin,
-  ServerAPI,
-  PanelSection,
-  PanelSectionRow,
-  ToggleField,
-  ButtonItem,
-  Field,
-} from "decky-frontend-lib";
-import { useState, useEffect, VFC } from "react";
+import { ButtonItem, Field, PanelSection, PanelSectionRow, ToggleField, staticClasses } from "@decky/ui";
+import { call, definePlugin, toaster } from "@decky/api";
+import { useEffect, useState } from "react";
 
-interface StatusResponse {
+const TITLE = "LG TV Control";
+
+interface Status {
   sync_enabled: boolean;
   status_text: string;
   tv_ip: string;
@@ -18,7 +13,20 @@ interface StatusResponse {
   paired: boolean;
 }
 
-const TvIcon: VFC = () => (
+interface SyncResult {
+  success: boolean;
+  sync_enabled?: boolean;
+  error?: string;
+}
+
+interface CommandResult {
+  success: boolean;
+  output: string;
+}
+
+const toast = (body: string, title: string = TITLE) => toaster.toast({ title, body });
+
+const TvIcon = () => (
   <svg
     viewBox="0 0 24 24"
     fill="currentColor"
@@ -30,24 +38,22 @@ const TvIcon: VFC = () => (
   </svg>
 );
 
-const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
-  const [syncEnabled, setSyncEnabled] = useState<boolean>(true);
-  const [tvIp, setTvIp] = useState<string>("");
-  const [tvMac, setTvMac] = useState<string>("");
-  const [tvInput, setTvInput] = useState<string>("");
-  const [paired, setPaired] = useState<boolean>(false);
-  const [busy, setBusy] = useState<boolean>(false);
+const Content = () => {
+  const [syncEnabled, setSyncEnabled] = useState(true);
+  const [tvIp, setTvIp] = useState("");
+  const [tvMac, setTvMac] = useState("");
+  const [tvInput, setTvInput] = useState("");
+  const [paired, setPaired] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const fetchStatus = async () => {
     try {
-      const res = await serverAPI.callPluginMethod<{}, StatusResponse>("get_status", {});
-      if (res.success && res.result) {
-        setSyncEnabled(Boolean(res.result.sync_enabled));
-        setTvIp(res.result.tv_ip || "(not set)");
-        setTvMac(res.result.tv_mac || "(not set)");
-        setTvInput(res.result.tv_input || "(none)");
-        setPaired(Boolean(res.result.paired));
-      }
+      const status = await call<[], Status>("get_status");
+      setSyncEnabled(Boolean(status.sync_enabled));
+      setTvIp(status.tv_ip || "(not set)");
+      setTvMac(status.tv_mac || "(not set)");
+      setTvInput(status.tv_input || "(none)");
+      setPaired(Boolean(status.paired));
     } catch (e) {
       console.error("[BazziteLG] Failed to fetch status:", e);
     }
@@ -60,17 +66,12 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
   const handleToggle = async (checked: boolean) => {
     setSyncEnabled(checked);
     try {
-      const res = await serverAPI.callPluginMethod<{ enabled: boolean }, { success: boolean; sync_enabled: boolean }>(
-        "set_sync",
-        { enabled: checked }
-      );
-      if (res.success && res.result) {
-        setSyncEnabled(res.result.sync_enabled);
-        serverAPI.toaster.toast({
-          title: "LG TV Control",
-          body: res.result.sync_enabled ? "Auto-sync is ACTIVATED" : "Auto-sync is DEACTIVATED",
-        });
+      const res = await call<[boolean], SyncResult>("set_sync", checked);
+      if (res.success) {
+        setSyncEnabled(Boolean(res.sync_enabled));
+        toast(res.sync_enabled ? "Auto-sync is ACTIVATED" : "Auto-sync is DEACTIVATED");
       } else {
+        toast(res.error || "Could not change auto-sync", "LG TV Control Failed");
         fetchStatus();
       }
     } catch (e) {
@@ -81,33 +82,18 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 
   const handlePower = async (mode: "on" | "off") => {
     setBusy(true);
-    serverAPI.toaster.toast({
-      title: "LG TV Control",
-      body: `Sending TV ${mode.toUpperCase()} command...`,
-    });
+    toast(`Sending TV ${mode.toUpperCase()} command...`);
     try {
-      const res = await serverAPI.callPluginMethod<{}, { success: boolean; output: string }>(
-        mode === "on" ? "power_on" : "power_off",
-        {}
-      );
-      setBusy(false);
+      const res = await call<[], CommandResult>(mode === "on" ? "power_on" : "power_off");
       if (res.success) {
-        serverAPI.toaster.toast({
-          title: "LG TV Control",
-          body: `TV ${mode.toUpperCase()} command sent successfully`,
-        });
+        toast(`TV ${mode.toUpperCase()} command sent successfully`);
       } else {
-        serverAPI.toaster.toast({
-          title: "LG TV Control Failed",
-          body: (res.result && res.result.output) || "Error communicating with TV",
-        });
+        toast(res.output || "Error communicating with TV", "LG TV Control Failed");
       }
     } catch (e) {
+      toast(String(e), "LG TV Control Error");
+    } finally {
       setBusy(false);
-      serverAPI.toaster.toast({
-        title: "LG TV Control Error",
-        body: String(e),
-      });
     }
   };
 
@@ -126,20 +112,12 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 
       <PanelSection title="Quick Power Actions">
         <PanelSectionRow>
-          <ButtonItem
-            layout="below"
-            disabled={busy}
-            onClick={() => handlePower("on")}
-          >
+          <ButtonItem layout="below" disabled={busy} onClick={() => handlePower("on")}>
             Turn TV ON (Wake-on-LAN)
           </ButtonItem>
         </PanelSectionRow>
         <PanelSectionRow>
-          <ButtonItem
-            layout="below"
-            disabled={busy}
-            onClick={() => handlePower("off")}
-          >
+          <ButtonItem layout="below" disabled={busy} onClick={() => handlePower("off")}>
             Turn TV OFF (Standby)
           </ButtonItem>
         </PanelSectionRow>
@@ -147,19 +125,19 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
 
       <PanelSection title="TV Info">
         <PanelSectionRow>
-          <Field label="State" value={syncEnabled ? "ACTIVATED" : "DEACTIVATED"} />
+          <Field label="State">{syncEnabled ? "ACTIVATED" : "DEACTIVATED"}</Field>
         </PanelSectionRow>
         <PanelSectionRow>
-          <Field label="TV IP Address" value={tvIp} />
+          <Field label="TV IP Address">{tvIp}</Field>
         </PanelSectionRow>
         <PanelSectionRow>
-          <Field label="WoL MAC" value={tvMac} />
+          <Field label="WoL MAC">{tvMac}</Field>
         </PanelSectionRow>
         <PanelSectionRow>
-          <Field label="HDMI Input" value={tvInput} />
+          <Field label="HDMI Input">{tvInput}</Field>
         </PanelSectionRow>
         <PanelSectionRow>
-          <Field label="Client Key" value={paired ? "Paired" : "Missing key"} />
+          <Field label="Client Key">{paired ? "Paired" : "Missing key"}</Field>
         </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={fetchStatus}>
@@ -171,12 +149,10 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({ serverAPI }) => {
   );
 };
 
-export default definePlugin((serverAPI: ServerAPI) => {
-  return {
-    title: "LG TV Control",
-    name: "LG TV Control",
-    icon: <TvIcon />,
-    content: <Content serverAPI={serverAPI} />,
-    onDismount() {},
-  };
-});
+export default definePlugin(() => ({
+  name: TITLE,
+  titleView: <div className={staticClasses.Title}>{TITLE}</div>,
+  icon: <TvIcon />,
+  content: <Content />,
+  onDismount() {},
+}));

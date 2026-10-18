@@ -38,6 +38,9 @@ Commands: `pair | on [input_id] [--auto] | off [--auto] | enable | disable | tog
 - `lgtv`: `/usr/local/bin/lgtv` CLI wrapper installed to `$PATH`.
 - Desktop entries in `/usr/local/share/applications` for KDE launcher and Steam Gamepad UI integration.
 - `decky-plugin/`: Decky Loader plugin for Steam Quick Access Menu (`...`) controller control.
+  - `install.sh` offers to copy it (sudo — `~/homebrew/plugins` is root-owned) to `~/homebrew/plugins/bazzite-lgtv` and restarts the **system** `plugin_loader.service`.
+  - `dist/index.js` is committed pre-built (no node on the target). It must keep the `@decky/rollup` output shape: no bare `import`s, React/`@decky/ui` from the `SP_REACT`/`DFL` globals, `@decky/api` preamble with `API_VERSION` equal to `plugin.json`'s `api_version`, backend calls via `call(name, ...positionalArgs)`. Keep `src/index.tsx` in sync.
+  - `main.py` runs inside the frozen PluginLoader: `sys.executable` is NOT Python, and `LD_LIBRARY_PATH` points at bundled libs — spawn `lgtv.py` with system `python3` and a cleaned env (`_python()` / `_clean_env()`).
 
 
 `on`/`off` register with a stored client key then send a single SSAP request. `on` additionally sends `ssap://tv/switchInput` (payload `{"inputId": ...}`) after `turnOnScreen` when an input is set — the default comes from `tv_input`, a CLI arg overrides it per-run. `pair` does the same registration flow but waits for user approval on the TV and saves the returned key. `config` (sync, no network) reads/writes `tv_ip` and `tv_input` — interactive with no flags, or via `--ip`/`--input` (`none`/`''` clears the input).

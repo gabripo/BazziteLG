@@ -114,3 +114,69 @@ async def test_power_off_executes_script(plugin):
     assert "Done" in res["output"]
     args = mock_exec.call_args[0]
     assert "off" in args
+
+
+async def test_power_commands_use_system_python_not_loader(plugin, monkeypatch):
+    # Inside Decky, sys.executable is the frozen PluginLoader binary
+    monkeypatch.setattr(sys, "executable", "/home/deck/homebrew/services/PluginLoader")
+    mock_proc = MagicMock()
+    mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+    mock_proc.returncode = 0
+
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)) as mock_exec:
+        await plugin.power_off()
+
+    assert "PluginLoader" not in mock_exec.call_args[0][0]
+    assert mock_exec.call_args[0][0].endswith("python3")
+
+
+async def test_power_commands_strip_pyinstaller_lib_path(plugin, monkeypatch):
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI12345")
+    monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+    mock_proc = MagicMock()
+    mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+    mock_proc.returncode = 0
+
+    with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)) as mock_exec:
+        await plugin.power_on()
+
+    assert "LD_LIBRARY_PATH" not in mock_exec.call_args.kwargs["env"]
+
+
+def test_clean_env_restores_original_lib_path(monkeypatch):
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI12345")
+    monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/opt/lib")
+    env = decky_main._clean_env()
+    assert env["LD_LIBRARY_PATH"] == "/opt/lib"
+    assert "LD_LIBRARY_PATH_ORIG" not in env
+
+
+# ── frontend bundle ───────────────────────────────────────────────────────────
+
+_PLUGIN_DIR = _PLUGIN_PATH.parent
+_BUNDLE = (_PLUGIN_DIR / "dist" / "index.js").read_text()
+
+
+def test_bundle_has_no_bare_imports():
+    # Decky's CEF context cannot resolve npm specifiers; React/@decky/ui are globals
+    import re
+    assert not re.search(r"^\s*import\s", _BUNDLE, re.MULTILINE)
+    assert "SP_REACT" in _BUNDLE and "DFL" in _BUNDLE
+    assert "export { index as default }" in _BUNDLE
+
+
+def test_bundle_api_version_matches_manifest():
+    import json, re
+    manifest = json.loads((_PLUGIN_DIR / "plugin.json").read_text())
+    m = re.search(r"const API_VERSION = (\d+);", _BUNDLE)
+    assert m and int(m.group(1)) == manifest["api_version"]
+    assert "callPluginMethod" not in _BUNDLE   # legacy (api_version 0) API
+
+
+def test_bundle_calls_only_existing_backend_methods():
+    import re
+    called = set(re.findall(r'call\("(\w+)"', _BUNDLE))
+    called |= set(re.findall(r'"(power_on|power_off)"', _BUNDLE))
+    assert called, "no backend calls found in bundle"
+    for name in called:
+        assert callable(getattr(decky_main.Plugin, name, None)), name
