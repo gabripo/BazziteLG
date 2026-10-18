@@ -8,6 +8,7 @@ import base64
 import fcntl
 import json
 import os
+import re
 import shutil
 import socket
 import ssl
@@ -213,6 +214,12 @@ def _send_wol(mac: str, tv_ip: str) -> None:
         s.sendto(packet, (tv_ip, 9))
 
 
+def normalize_input(input_id: str) -> str:
+    """Map loose HDMI spellings ("HDMI3", "hdmi 3") to webOS ids ("HDMI_3")."""
+    m = re.fullmatch(r"hdmi[ _-]?(\d)", input_id.strip(), re.IGNORECASE)
+    return f"HDMI_{m.group(1)}" if m else input_id
+
+
 async def _request(ws: WebSocket, req_id: int, uri: str, payload: dict) -> dict:
     """Send an SSAP request and return the parsed response message."""
     await ws.send(json.dumps({
@@ -321,6 +328,8 @@ async def run(mode: str, input_id: str | None = None, auto: bool = False) -> Non
 
     if mode == "on" and input_id is None and INPUT_FILE.exists():
         input_id = INPUT_FILE.read_text().strip() or None
+    if input_id:
+        input_id = normalize_input(input_id)
 
     client_key = None
     if mode != "pair":
@@ -435,7 +444,7 @@ def config_command(args: list[str]) -> None:
 
     if input_val is not _UNSET:
         inp = input_val.strip()
-        inp = "" if inp == "none" else inp
+        inp = "" if inp == "none" else normalize_input(inp)
         if inp:
             INPUT_FILE.write_text(inp + "\n")
             INPUT_FILE.chmod(0o644)

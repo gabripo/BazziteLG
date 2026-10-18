@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_TV_IP="192.168.1.30"
-DEFAULT_HDMI_INPUT="HDMI3"
+DEFAULT_HDMI_INPUT="HDMI_3"
 CONF_DIR="/etc/lgtvcontrol"
 SERVICE_DIR="/etc/systemd/system"
 
@@ -59,7 +59,7 @@ while [[ $i -le $# ]]; do
             ;;
         --input)
             i=$((i + 1))
-            [[ $i -le $# ]] || die "--input requires a value (e.g. HDMI2 or none)"
+            [[ $i -le $# ]] || die "--input requires a value (e.g. HDMI_2 or none)"
             INPUT_ARG="${!i}"
             ;;
         *)
@@ -110,6 +110,9 @@ if [[ -n "$INPUT_ARG" ]]; then
 else
     read -rp "$(printf "  HDMI input to switch to after power-on [${DEFAULT_HDMI_INPUT}] (or 'none'): ")" HDMI_INPUT
     HDMI_INPUT="${HDMI_INPUT:-$DEFAULT_HDMI_INPUT}"
+fi
+if [[ "$HDMI_INPUT" =~ ^[Hh][Dd][Mm][Ii][\ _-]?([0-9])$ ]]; then
+    HDMI_INPUT="HDMI_${BASH_REMATCH[1]}"   # webOS ids are HDMI_1..HDMI_4
 fi
 if [[ "$HDMI_INPUT" == "none" ]]; then
     HDMI_INPUT=""

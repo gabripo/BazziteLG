@@ -44,7 +44,7 @@ The installer will:
 
 1. Check for `python3` and (if SELinux is Enforcing) `semanage`
 2. Ask for your TV's IP address
-3. Ask which HDMI input to switch to after power-on (default `HDMI3`, or `none`)
+3. Ask which HDMI input to switch to after power-on (default `HDMI_3`, or `none`)
 4. Copy scripts to `/etc/lgtvcontrol/`
 5. Apply `bin_t` SELinux contexts so systemd can execute them
 6. Pair with the TV — a prompt appears on screen, press OK with your remote
@@ -55,7 +55,7 @@ The installer will:
 You can also pass the HDMI input on the command line to skip the prompt:
 
 ```bash
-./install.sh --input HDMI2        # use HDMI2 instead of the default HDMI3
+./install.sh --input HDMI_2        # use HDMI_2 instead of the default HDMI_3
 ./install.sh --input none         # install without any input switching
 ```
 
@@ -109,10 +109,10 @@ Scripts are installed to `/etc/lgtvcontrol/` and labelled `bin_t` via `semanage 
 
 `lgtv.py` connects over WebSocket (port 3001, TLS) and sends LG's SSAP protocol commands:
 
-- **on** → `ssap://com.webos.service.tvpower/power/turnOnScreen`, then if an input is configured, `ssap://tv/switchInput` with `{"inputId": <tv_input>}` to bring up the HDMI port (e.g. `HDMI3`)
+- **on** → `ssap://com.webos.service.tvpower/power/turnOnScreen`, then if an input is configured, `ssap://tv/switchInput` with `{"inputId": <tv_input>}` to bring up the HDMI port (e.g. `HDMI_3`)
 - **off** → `ssap://system/turnOff` with `standbyMode: active` (keeps network chip alive for WoL)
 
-The default input is read from `/etc/lgtvcontrol/tv_input`. You can override it for a single run without changing the config: `lgtv on HDMI2`.
+The default input is read from `/etc/lgtvcontrol/tv_input`. You can override it for a single run without changing the config: `lgtv on HDMI_2`.
 
 Pairing is done once. The client key is saved to `/etc/lgtvcontrol/client.key` and sent with every subsequent connection.
 
@@ -193,7 +193,7 @@ No need to re-run the installer. Use the built-in `config` command:
 sudo lgtv config          # interactive (shows current values)
 sudo lgtv config --show   # just print current values
 sudo lgtv config --ip 192.168.1.42
-sudo lgtv config --input HDMI2
+sudo lgtv config --input HDMI_2
 sudo lgtv config --ip 192.168.1.42 --input none   # none/'' disables input switching
 ```
 

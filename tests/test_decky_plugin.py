@@ -26,7 +26,7 @@ async def test_get_status_active(plugin, tmp_path):
     mac = tmp_path / "tv_mac"
     mac.write_text("aa:bb:cc:dd:ee:ff\n")
     inp = tmp_path / "tv_input"
-    inp.write_text("HDMI3\n")
+    inp.write_text("HDMI_3\n")
     key = tmp_path / "client.key"
     key.write_text("secret-key\n")
     disabled = tmp_path / "disabled"
@@ -42,7 +42,7 @@ async def test_get_status_active(plugin, tmp_path):
     assert status["status_text"] == "ACTIVATED"
     assert status["tv_ip"] == "192.168.1.55"
     assert status["tv_mac"] == "aa:bb:cc:dd:ee:ff"
-    assert status["tv_input"] == "HDMI3"
+    assert status["tv_input"] == "HDMI_3"
     assert status["paired"] is True
 
 
@@ -93,13 +93,13 @@ async def test_power_on_executes_script(plugin):
     mock_proc.returncode = 0
 
     with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_proc)) as mock_exec:
-        res = await plugin.power_on("HDMI2")
+        res = await plugin.power_on("HDMI_2")
 
     assert res["success"] is True
     assert "OK" in res["output"]
     args = mock_exec.call_args[0]
     assert "on" in args
-    assert "HDMI2" in args
+    assert "HDMI_2" in args
 
 
 async def test_power_off_executes_script(plugin):
