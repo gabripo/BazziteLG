@@ -670,3 +670,226 @@ def test_sleep_service_wantedby_sleep_target(sleep_svc):
 
 def test_sleep_service_remain_after_exit(sleep_svc):
     assert "RemainAfterExit=yes" in sleep_svc
+
+
+# ── Deactivation & state toggle ───────────────────────────────────────────────
+
+def test_is_disabled_false_by_default(tmp_path):
+    disabled_file = tmp_path / "disabled"
+    with patch.object(lgtv, "DISABLED_FILE", disabled_file):
+        assert not lgtv.is_disabled()
+
+
+def test_is_disabled_true_when_file_exists(tmp_path):
+    disabled_file = tmp_path / "disabled"
+    disabled_file.touch()
+    with patch.object(lgtv, "DISABLED_FILE", disabled_file):
+        assert lgtv.is_disabled()
+
+
+def test_disable_command_creates_file(tmp_path):
+    disabled_file = tmp_path / "disabled"
+    with patch.object(lgtv, "DISABLED_FILE", disabled_file), \
+         patch("lgtv.send_notification") as mock_notify:
+        lgtv.disable_command()
+    assert disabled_file.exists()
+    mock_notify.assert_called_once_with("LG TV Control", "Auto-power sync is now DEACTIVATED", "media-playback-pause")
+
+
+def test_enable_command_removes_file(tmp_path):
+    disabled_file = tmp_path / "disabled"
+    disabled_file.touch()
+    with patch.object(lgtv, "DISABLED_FILE", disabled_file), \
+         patch("lgtv.send_notification") as mock_notify:
+        lgtv.enable_command()
+    assert not disabled_file.exists()
+    mock_notify.assert_called_once_with("LG TV Control", "Auto-power sync is now ACTIVATED", "video-display")
+
+
+def test_enable_command_missing_ok(tmp_path):
+    disabled_file = tmp_path / "disabled"
+    with patch.object(lgtv, "DISABLED_FILE", disabled_file), \
+         patch("lgtv.send_notification"):
+        lgtv.enable_command()
+    assert not disabled_file.exists()
+
+
+def test_toggle_command_disables_when_enabled(tmp_path):
+    disabled_file = tmp_path / "disabled"
+    with patch.object(lgtv, "DISABLED_FILE", disabled_file), \
+         patch("lgtv.send_notification"):
+        lgtv.toggle_command()
+    assert disabled_file.exists()
+
+
+def test_toggle_command_enables_when_disabled(tmp_path):
+    disabled_file = tmp_path / "disabled"
+    disabled_file.touch()
+    with patch.object(lgtv, "DISABLED_FILE", disabled_file), \
+         patch("lgtv.send_notification"):
+        lgtv.toggle_command()
+    assert not disabled_file.exists()
+
+
+def test_status_command_when_active(tmp_path, capsys):
+    ip, key = setup_files(tmp_path)
+    mac = tmp_path / "tv_mac"
+    mac.write_text("aa:bb:cc:dd:ee:ff\n")
+    inp = tmp_path / "tv_input"
+    inp.write_text("HDMI3\n")
+    disabled_file = tmp_path / "disabled"
+
+    with patch.object(lgtv, "IP_FILE", ip), patch.object(lgtv, "KEY_FILE", key), \
+         patch.object(lgtv, "MAC_FILE", mac), patch.object(lgtv, "INPUT_FILE", inp), \
+         patch.object(lgtv, "DISABLED_FILE", disabled_file), \
+         patch("shutil.which", return_value=None):
+        lgtv.status_command()
+
+    out = capsys.readouterr().out
+    assert "ACTIVATED (auto-power sync active)" in out
+    assert "192.168.1.100" in out
+    assert "aa:bb:cc:dd:ee:ff" in out
+    assert "HDMI3" in out
+    assert "Present" in out
+
+
+def test_status_command_when_deactivated(tmp_path, capsys):
+    ip, key = setup_files(tmp_path)
+    disabled_file = tmp_path / "disabled"
+    disabled_file.touch()
+
+    with patch.object(lgtv, "IP_FILE", ip), patch.object(lgtv, "KEY_FILE", key), \
+         patch.object(lgtv, "MAC_FILE", tmp_path / "tv_mac"), \
+         patch.object(lgtv, "INPUT_FILE", tmp_path / "tv_input"), \
+         patch.object(lgtv, "DISABLED_FILE", disabled_file), \
+         patch("shutil.which", return_value=None):
+        lgtv.status_command()
+
+    out = capsys.readouterr().out
+    assert "DEACTIVATED (auto-power sync paused)" in out
+
+
+def test_send_notification(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/notify-send" if cmd == "notify-send" else None)
+    with patch("subprocess.run") as mock_sub:
+        lgtv.send_notification("Title", "Message", "icon-name")
+    mock_sub.assert_called_once()
+    args = mock_sub.call_args[0][0]
+    assert "/usr/bin/notify-send" in args
+    assert "Title" in args
+    assert "Message" in args
+
+
+# ── run() with auto and deactivation ──────────────────────────────────────────
+
+async def test_run_auto_skips_when_deactivated(tmp_path, capsys):
+    """When deactivated, auto runs immediately return without network activity."""
+    disabled_file = tmp_path / "disabled"
+    disabled_file.touch()
+    with patch.object(lgtv, "DISABLED_FILE", disabled_file), \
+         patch("lgtv.ws_connect") as mock_conn, \
+         patch("lgtv._send_wol") as mock_wol:
+        await run("on", auto=True)
+    mock_conn.assert_not_called()
+    mock_wol.assert_not_called()
+    out = capsys.readouterr().out
+    assert "LG TV control is deactivated — skipping auto on" in out
+
+
+async def test_run_manual_runs_even_when_deactivated(tmp_path, capsys):
+    """Manual run proceeds with a note even if auto-sync is deactivated."""
+    ip, key = setup_files(tmp_path)
+    disabled_file = tmp_path / "disabled"
+    disabled_file.touch()
+    ws = make_ws(REGISTERED, SUCCESS)
+    with patch.object(lgtv, "IP_FILE", ip), patch.object(lgtv, "KEY_FILE", key), \
+         patch.object(lgtv, "DISABLED_FILE", disabled_file), \
+         patch("lgtv.ws_connect", AsyncMock(return_value=ws)):
+        await run("on", auto=False)
+    err = capsys.readouterr().err
+    assert "Note: LG TV auto-sync is currently DEACTIVATED" in err
+
+
+# ── CLI subcommands ───────────────────────────────────────────────────────────
+
+def test_main_disable(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lgtv.py", "disable"])
+    with patch("lgtv.disable_command") as mock_cmd:
+        lgtv.main()
+    mock_cmd.assert_called_once()
+
+
+def test_main_deactivate_alias(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lgtv.py", "deactivate"])
+    with patch("lgtv.disable_command") as mock_cmd:
+        lgtv.main()
+    mock_cmd.assert_called_once()
+
+
+def test_main_enable(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lgtv.py", "enable"])
+    with patch("lgtv.enable_command") as mock_cmd:
+        lgtv.main()
+    mock_cmd.assert_called_once()
+
+
+def test_main_activate_alias(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lgtv.py", "activate"])
+    with patch("lgtv.enable_command") as mock_cmd:
+        lgtv.main()
+    mock_cmd.assert_called_once()
+
+
+def test_main_toggle(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lgtv.py", "toggle"])
+    with patch("lgtv.toggle_command") as mock_cmd:
+        lgtv.main()
+    mock_cmd.assert_called_once()
+
+
+def test_main_status(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lgtv.py", "status"])
+    with patch("lgtv.status_command") as mock_cmd:
+        lgtv.main()
+    mock_cmd.assert_called_once()
+
+
+def test_main_on_auto(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lgtv.py", "on", "--auto"])
+    with patch("lgtv.run", AsyncMock()) as mock_run:
+        lgtv.main()
+    mock_run.assert_called_once_with("on", None, auto=True)
+
+
+def test_main_off_auto(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lgtv.py", "off", "--auto"])
+    with patch("lgtv.run", AsyncMock()) as mock_run:
+        lgtv.main()
+    mock_run.assert_called_once_with("off", None, auto=True)
+
+
+def test_main_help(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["lgtv.py", "--help"])
+    with pytest.raises(SystemExit) as exc:
+        lgtv.main()
+    assert exc.value.code == 0
+    assert "Usage: lgtv.py" in capsys.readouterr().out
+
+
+# ── Wrapper templates ─────────────────────────────────────────────────────────
+
+_ON_TPL = pathlib.Path(__file__).parent.parent / "scripts" / "lgtv-on.sh.tpl"
+_OFF_TPL = pathlib.Path(__file__).parent.parent / "scripts" / "lgtv-off.sh.tpl"
+
+
+def test_on_tpl_checks_disabled():
+    content = _ON_TPL.read_text()
+    assert "/etc/lgtvcontrol/disabled" in content
+    assert "--auto" in content
+
+
+def test_off_tpl_checks_disabled():
+    content = _OFF_TPL.read_text()
+    assert "/etc/lgtvcontrol/disabled" in content
+    assert "--auto" in content
+

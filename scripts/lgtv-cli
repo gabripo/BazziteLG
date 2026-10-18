@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# lgtv — command-line interface for Bazzite LG TV power control
+set -e
+
+if [[ -f /etc/lgtvcontrol/lgtv.py ]]; then
+    exec python3 /etc/lgtvcontrol/lgtv.py "$@"
+elif [[ -f "$(dirname "${BASH_SOURCE[0]}")/lgtv.py" ]]; then
+    exec python3 "$(dirname "${BASH_SOURCE[0]}")/lgtv.py" "$@"
+else
+    echo "Error: lgtv.py not found in /etc/lgtvcontrol or current directory" >&2
+    exit 1
+fi

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Turn LG TV OFF
+GenericName=Turn LG TV OFF
+Comment=Put LG OLED TV into standby
+Exec=lgtv off
+Icon=display
+Terminal=false
+Categories=Utility;
+Keywords=LG;TV;OLED;Power;OFF;Standby;
+StartupNotify=false

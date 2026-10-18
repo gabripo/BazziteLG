@@ -8,9 +8,11 @@ import base64
 import fcntl
 import json
 import os
+import shutil
 import socket
 import ssl
 import struct
+import subprocess
 import sys
 from pathlib import Path
 
@@ -19,12 +21,16 @@ KEY_FILE = CONF_DIR / "client.key"
 IP_FILE  = CONF_DIR / "tv_ip"
 INPUT_FILE = CONF_DIR / "tv_input"
 MAC_FILE = CONF_DIR / "tv_mac"
+DISABLED_FILE = CONF_DIR / "disabled"
 TIMEOUT        = 10
 RETRY_ATTEMPTS = 8   # max connection attempts at startup
 RETRY_DELAY    = 5   # seconds between attempts
 INPUT_SWITCH_DELAY = 1.0   # wait for the screen to come up before switching input
 
-USAGE = "Usage: lgtv.py pair|on [input_id]|off|config [--show|--ip IP|--input ID]"
+USAGE = (
+    "Usage: lgtv.py pair|on [input_id] [--auto]|off [--auto]|enable|disable|toggle|status|gui|config "
+    "[--show|--ip IP|--input ID]"
+)
 
 ENDPOINTS = {
     "on":  "com.webos.service.tvpower/power/turnOnScreen",
@@ -287,7 +293,14 @@ async def _session(ws: WebSocket, mode: str, client_key: str | None, input_id: s
     # ConnectionError (TV sent close frame) propagates — caller will retry
 
 
-async def run(mode: str, input_id: str | None = None) -> None:
+async def run(mode: str, input_id: str | None = None, auto: bool = False) -> None:
+    if auto and is_disabled():
+        print(f"LG TV control is deactivated — skipping auto {mode}.")
+        return
+
+    if is_disabled() and mode in ("on", "off"):
+        print("Note: LG TV auto-sync is currently DEACTIVATED (running manually).", file=sys.stderr)
+
     try:
         tv_ip = IP_FILE.read_text().strip()
     except FileNotFoundError:
@@ -419,18 +432,141 @@ def config_command(args: list[str]) -> None:
             print("tv_input cleared — no input switching on power-on")
 
 
+def send_notification(title: str, message: str, icon: str = "video-display") -> None:
+    """Send a desktop notification using notify-send if available."""
+    notify_bin = shutil.which("notify-send")
+    if not notify_bin:
+        return
+    try:
+        subprocess.run(
+            [notify_bin, "-a", "LG TV Control", "-i", icon, title, message],
+            check=False,
+            timeout=2,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+
+def is_disabled() -> bool:
+    """Return True if automatic LG TV control is deactivated."""
+    return DISABLED_FILE.exists()
+
+
+def disable_command() -> None:
+    """Deactivate automatic TV power control (creates /etc/lgtvcontrol/disabled)."""
+    try:
+        DISABLED_FILE.touch()
+        try:
+            DISABLED_FILE.chmod(0o666)
+        except OSError:
+            pass
+    except PermissionError:
+        sys.exit(
+            f"Permission denied: cannot write to {DISABLED_FILE}\n"
+            f"Run with sudo: sudo python3 {__file__} disable"
+        )
+    except OSError as e:
+        sys.exit(f"Failed to deactivate: {e}")
+
+    print("LG TV control is now DEACTIVATED (auto-power sync paused).")
+    send_notification("LG TV Control", "Auto-power sync is now DEACTIVATED", "media-playback-pause")
+
+
+def enable_command() -> None:
+    """Activate automatic TV power control (removes /etc/lgtvcontrol/disabled)."""
+    try:
+        DISABLED_FILE.unlink(missing_ok=True)
+    except PermissionError:
+        sys.exit(
+            f"Permission denied: cannot remove {DISABLED_FILE}\n"
+            f"Run with sudo: sudo python3 {__file__} enable"
+        )
+    except OSError as e:
+        sys.exit(f"Failed to activate: {e}")
+
+    print("LG TV control is now ACTIVATED (auto-power sync enabled).")
+    send_notification("LG TV Control", "Auto-power sync is now ACTIVATED", "video-display")
+
+
+def toggle_command() -> None:
+    """Toggle between activated and deactivated states."""
+    if is_disabled():
+        enable_command()
+    else:
+        disable_command()
+
+
+def status_command() -> None:
+    """Display current status of LG TV control and configuration."""
+    disabled = is_disabled()
+    status_str = "DEACTIVATED (auto-power sync paused)" if disabled else "ACTIVATED (auto-power sync active)"
+    print(f"Status:       {status_str}")
+    print(f"TV IP:        {_conf_value(IP_FILE) or '(not set)'}")
+    print(f"TV MAC (WoL): {_conf_value(MAC_FILE) or '(not set)'}")
+    print(f"HDMI Input:   {_conf_value(INPUT_FILE) or '(none)'}")
+    print(f"Client Key:   {'Present' if KEY_FILE.exists() else 'Missing (pairing required)'}")
+    print(f"State File:   {DISABLED_FILE} ({'exists' if disabled else 'not present'})")
+
+    systemctl_bin = shutil.which("systemctl")
+    if systemctl_bin:
+        print("\nSystemd Services:")
+        for svc in ("lgtv-startup.service", "lgtv-shutdown.service", "lgtv-sleep.service"):
+            try:
+                res = subprocess.run(
+                    [systemctl_bin, "is-enabled", svc],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                )
+                state = res.stdout.strip() or "unknown"
+                print(f"  {svc:22s} {state}")
+            except Exception:
+                pass
+
+
 def main() -> None:
     args = sys.argv[1:]
-    if not args:
-        sys.exit(USAGE)
+    if not args or args[0] in ("-h", "--help"):
+        print(USAGE)
+        sys.exit(0 if args else 1)
+
     mode = args[0]
     if mode == "config":
         config_command(args[1:])
         return
+    if mode in ("disable", "deactivate"):
+        disable_command()
+        return
+    if mode in ("enable", "activate"):
+        enable_command()
+        return
+    if mode == "toggle":
+        toggle_command()
+        return
+    if mode == "status":
+        status_command()
+        return
+    if mode == "gui":
+        gui_script = Path(__file__).parent / "lgtv-gui.py"
+        if not gui_script.exists():
+            gui_script = CONF_DIR / "lgtv-gui.py"
+        if gui_script.exists():
+            os.execv(sys.executable, [sys.executable, str(gui_script)] + args[1:])
+        else:
+            sys.exit(f"GUI script not found: {gui_script}")
+
     if mode not in ("pair", "on", "off"):
         sys.exit(USAGE)
-    input_id = args[1] if mode == "on" and len(args) > 1 else None
-    asyncio.run(run(mode, input_id))
+
+    auto = "--auto" in args[1:]
+    remaining = [a for a in args[1:] if a != "--auto"]
+    input_id = remaining[0] if mode == "on" and remaining else None
+    if auto:
+        asyncio.run(run(mode, input_id, auto=True))
+    else:
+        asyncio.run(run(mode, input_id))
 
 
 if __name__ == "__main__":

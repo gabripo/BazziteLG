@@ -159,12 +159,45 @@ sudo cp "$SCRIPT_DIR/scripts/lgtv.py" "$CONF_DIR/lgtv.py"
 sudo chmod 755 "$CONF_DIR/lgtv.py"
 ok "lgtv.py"
 
+# GUI and Tray helpers
+sudo cp "$SCRIPT_DIR/scripts/lgtv-gui.py" "$CONF_DIR/lgtv-gui.py"
+sudo chmod 755 "$CONF_DIR/lgtv-gui.py"
+ok "lgtv-gui.py"
+
+sudo cp "$SCRIPT_DIR/scripts/lgtv-tray.py" "$CONF_DIR/lgtv-tray.py"
+sudo chmod 755 "$CONF_DIR/lgtv-tray.py"
+ok "lgtv-tray.py"
+
 # Shell wrappers
 for cmd in on off; do
     sudo cp "$SCRIPT_DIR/scripts/lgtv-${cmd}.sh.tpl" "$CONF_DIR/lgtv-${cmd}.sh"
     sudo chmod 755 "$CONF_DIR/lgtv-${cmd}.sh"
     ok "lgtv-${cmd}.sh"
 done
+
+# CLI command in PATH
+sudo mkdir -p /usr/local/bin
+sudo cp "$SCRIPT_DIR/scripts/lgtv-cli" /usr/local/bin/lgtv
+sudo chmod 755 /usr/local/bin/lgtv
+ok "lgtv command (/usr/local/bin/lgtv)"
+
+# Set sticky permissions so desktop user can toggle active state without sudo
+sudo chmod 1777 "$CONF_DIR"
+ok "Set permissions (1777 on $CONF_DIR for passwordless user toggle)"
+
+# Desktop and Steam integration (.desktop files)
+APPS_DIR="/usr/local/share/applications"
+sudo mkdir -p "$APPS_DIR"
+if [[ -d "$SCRIPT_DIR/desktop" ]]; then
+    for f in "$SCRIPT_DIR"/desktop/*.desktop; do
+        if [[ -f "$f" ]]; then
+            sudo cp "$f" "$APPS_DIR/"
+            sudo chmod 644 "$APPS_DIR/$(basename "$f")"
+            ok "$(basename "$f")"
+        fi
+    done
+    cmd_exists update-desktop-database && sudo update-desktop-database "$APPS_DIR" 2>/dev/null || true
+fi
 
 # ---------------------------------------------------------------------------
 # SELinux file contexts
@@ -175,12 +208,15 @@ if selinux_enforcing; then
     semanage_add "${CONF_DIR}/lgtv-on\.sh"
     semanage_add "${CONF_DIR}/lgtv-off\.sh"
     semanage_add "${CONF_DIR}/lgtv\.py"
+    semanage_add "${CONF_DIR}/lgtv-gui\.py"
+    semanage_add "${CONF_DIR}/lgtv-tray\.py"
+    semanage_add "/usr/local/bin/lgtv"
 
     if cmd_exists restorecon; then
-        sudo restorecon -Rv "$CONF_DIR/" > /dev/null
+        sudo restorecon -Rv "$CONF_DIR/" /usr/local/bin/lgtv > /dev/null
         ok "Contexts applied and restored"
     else
-        warn "restorecon not found — reboot or run: sudo restorecon -Rv $CONF_DIR/"
+        warn "restorecon not found — reboot or run: sudo restorecon -Rv $CONF_DIR/ /usr/local/bin/lgtv"
     fi
 fi
 
@@ -241,13 +277,16 @@ ok "Services enabled"
 # Done
 # ---------------------------------------------------------------------------
 info "Installation complete"
-echo
 printf "  Useful commands:\n"
-printf "    Test:   ./install.sh --test\n"
-printf "    Logs:   journalctl -u lgtv-startup -u lgtv-shutdown -u lgtv-sleep -f\n"
-printf "    Re-pair: sudo python3 %s/lgtv.py pair\n" "$CONF_DIR"
-printf "    Change IP/input: sudo python3 %s/lgtv.py config\n" "$CONF_DIR"
+printf "    Toggle auto-sync: lgtv toggle (or lgtv disable / lgtv enable)\n"
+printf "    Check status:     lgtv status\n"
+printf "    Control panel:    lgtv gui\n"
+printf "    Screen test:      ./install.sh --test\n"
+printf "    View logs:        journalctl -u lgtv-startup -u lgtv-shutdown -u lgtv-sleep -f\n"
+printf "    Re-pair TV:       sudo lgtv pair\n"
+printf "    Change IP/input:  sudo lgtv config\n"
 echo
+
 
 # shellcheck disable=SC2059
 read -rp "$(printf "${BOLD}Run screen test now? (off 10s → on) [Y/n]: ${NC}")" answer

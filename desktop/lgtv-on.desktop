@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Turn LG TV ON
+GenericName=Turn LG TV ON
+Comment=Wake up LG OLED TV and switch to default HDMI input
+Exec=lgtv on
+Icon=video-display
+Terminal=false
+Categories=Utility;
+Keywords=LG;TV;OLED;Power;ON;Wake;
+StartupNotify=false

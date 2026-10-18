@@ -84,10 +84,16 @@ systemd launches services in the `init_t` SELinux domain. Files in your home dir
 Scripts are installed to `/etc/lgtvcontrol/` and labelled `bin_t` via `semanage fcontext`. This is the standard Fedora approach to making custom paths executable by systemd. It survives reboots and SELinux filesystem relabels.
 
 ```
+/usr/local/bin/
+  lgtv             ← CLI shortcut in $PATH (lgtv on|off|toggle|status|gui)
+
 /etc/lgtvcontrol/
   lgtv.py          ← WebSocket client (stdlib only)
-  lgtv-on.sh       ← calls: python3 /etc/lgtvcontrol/lgtv.py on
-  lgtv-off.sh      ← calls: python3 /etc/lgtvcontrol/lgtv.py off
+  lgtv-gui.py      ← Couch-friendly GUI control panel
+  lgtv-tray.py     ← System tray indicator & tooltip for Desktop Mode
+  lgtv-on.sh       ← calls: python3 /etc/lgtvcontrol/lgtv.py on --auto
+  lgtv-off.sh      ← calls: python3 /etc/lgtvcontrol/lgtv.py off --auto
+  disabled         ← state marker when TV auto-sync is deactivated
   tv_ip            ← TV IP address (written by installer)
   tv_input         ← HDMI input to switch to after power-on (optional)
   tv_mac           ← TV MAC address (written by installer, used for WoL)
@@ -106,7 +112,7 @@ Scripts are installed to `/etc/lgtvcontrol/` and labelled `bin_t` via `semanage 
 - **on** → `ssap://com.webos.service.tvpower/power/turnOnScreen`, then if an input is configured, `ssap://tv/switchInput` with `{"inputId": <tv_input>}` to bring up the HDMI port (e.g. `HDMI3`)
 - **off** → `ssap://system/turnOff` with `standbyMode: active` (keeps network chip alive for WoL)
 
-The default input is read from `/etc/lgtvcontrol/tv_input`. You can override it for a single run without changing the config: `sudo python3 /etc/lgtvcontrol/lgtv.py on HDMI2`.
+The default input is read from `/etc/lgtvcontrol/tv_input`. You can override it for a single run without changing the config: `lgtv on HDMI2`.
 
 Pairing is done once. The client key is saved to `/etc/lgtvcontrol/client.key` and sent with every subsequent connection.
 
@@ -116,13 +122,49 @@ When powering on, `lgtv.py` attempts to connect to the TV. If the first attempt 
 
 The TV's MAC is detected automatically from the ARP cache during install.
 
-### Shutdown vs reboot
+### Deactivating TV Control (Temporary or Permanent)
 
-`lgtv-shutdown.service` has `Conflicts=reboot.target`, so the screen turns off on **shutdown only** — reboots leave it alone.
+When using a Gaming HTPC, you may want to prevent the PC from automatically waking or turning off the TV (e.g. when downloading updates in the background, streaming to another room via Moonlight/Steam Link, or using a secondary monitor).
 
-### Suspend/resume
+You can easily deactivate or re-enable the sync at any time without uninstalling:
 
-`lgtv-sleep.service` runs `lgtv-off.sh` before the system suspends and `lgtv-on.sh` after it wakes. It uses `RemainAfterExit=yes` so systemd tracks the "active" state across the sleep cycle and calls `ExecStop` (the on command) on resume. It activates for all sleep states: suspend, hibernate, and hybrid-sleep.
+```bash
+lgtv disable    # Deactivates auto-sync (or 'lgtv deactivate')
+lgtv enable     # Reactivates auto-sync (or 'lgtv activate')
+lgtv toggle     # Toggles between active and deactivated states
+lgtv status     # Shows whether sync is active or deactivated, along with TV IP/MAC
+```
+
+- When deactivated, systemd hooks (`lgtv-on.sh` and `lgtv-off.sh`) skip all network connections and WoL packets instantly (< 1ms) with exit code 0.
+- Manual commands (`lgtv on` / `lgtv off`) still work when manually typed.
+- Toggling automatically displays a native desktop notification (`notify-send`).
+- The configuration directory `/etc/lgtvcontrol` has `1777` permissions, allowing standard desktop users to toggle without needing `sudo`.
+
+---
+
+## GUI, System Tray & Steam Integration
+
+For a Gaming HTPC, operating from the couch with a gamepad or wireless mouse is essential:
+
+### 1. Couch-Friendly GUI Control Panel (`lgtv gui`)
+Run `lgtv gui` from the terminal, or launch **LG TV Control Panel** from the KDE Plasma Application Menu / Steam.
+- High-contrast, OLED-friendly dark theme with large fonts readable from 3 meters away.
+- Big status badge showing whether Auto-Sync is `ACTIVATED` or `DEACTIVATED`.
+- One-click buttons to toggle auto-sync, turn screen ON, or turn screen OFF.
+- Falls back automatically to `kdialog` or `zenity` if Tkinter is not installed.
+
+### 2. Desktop System Tray Applet with Tooltip (`scripts/lgtv-tray.py`)
+In Bazzite Desktop Mode (KDE Plasma):
+- Displays a TV icon in the system tray panel.
+- **Hover Tooltip**: Shows current status (e.g., `LG TV Control: ACTIVATED (Auto-power sync enabled)`).
+- **Left-Click**: Instantly toggles between Activated and Deactivated states.
+- **Right-Click Context Menu**: Status indicator, Toggle Auto-Sync, Turn Screen ON/OFF, and Open Control Panel.
+
+### 3. Steam Gamepad UI (Big Picture) Integration
+Installed `.desktop` files in `/usr/local/share/applications/` allow easy Steam integration:
+- Open Steam → **Games** → **Add a Non-Steam Game to My Library...**
+- Select **Toggle LG TV Sync** or **LG TV Control Panel**.
+- Now you can toggle TV sync straight from your controller in Big Picture Mode!
 
 ---
 
@@ -131,20 +173,27 @@ The TV's MAC is detected automatically from the ARP cache during install.
 No need to re-run the installer. Use the built-in `config` command:
 
 ```bash
-sudo python3 /etc/lgtvcontrol/lgtv.py config          # interactive (shows current values)
-sudo python3 /etc/lgtvcontrol/lgtv.py config --show   # just print current values
-sudo python3 /etc/lgtvcontrol/lgtv.py config --ip 192.168.1.42
-sudo python3 /etc/lgtvcontrol/lgtv.py config --input HDMI2
-sudo python3 /etc/lgtvcontrol/lgtv.py config --ip 192.168.1.42 --input none   # none/'' disables input switching
+sudo lgtv config          # interactive (shows current values)
+sudo lgtv config --show   # just print current values
+sudo lgtv config --ip 192.168.1.42
+sudo lgtv config --input HDMI2
+sudo lgtv config --ip 192.168.1.42 --input none   # none/'' disables input switching
 ```
-
-Changing the IP does **not** require re-pairing — the client key is stored by the TV and is not tied to the IP the connection comes from. Switching to a *different* TV requires `pair` again.
 
 ---
 
 ## Useful commands
 
 ```bash
+# Toggle / check sync state
+lgtv toggle
+lgtv status
+lgtv gui
+
+# Power control
+lgtv on
+lgtv off
+
 # Check service status
 systemctl status lgtv-startup.service
 systemctl status lgtv-shutdown.service
@@ -153,15 +202,8 @@ systemctl status lgtv-sleep.service
 # View logs
 journalctl -u lgtv-startup -u lgtv-shutdown -u lgtv-sleep -f
 
-# Manually trigger
-sudo systemctl start lgtv-startup.service
-sudo systemctl start lgtv-shutdown.service
-
 # Re-pair if the TV rejects the stored key
-sudo python3 /etc/lgtvcontrol/lgtv.py pair
-
-# Change TV IP / HDMI input
-sudo python3 /etc/lgtvcontrol/lgtv.py config
+sudo lgtv pair
 ```
 
 ---

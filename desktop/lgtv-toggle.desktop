@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Toggle LG TV Sync
+GenericName=LG TV Sync Toggle
+Comment=Enable or disable automatic LG TV power sync on sleep, wake, and boot
+Exec=lgtv toggle
+Icon=video-display
+Terminal=false
+Categories=Utility;HardwareSettings;
+Keywords=LG;TV;OLED;Power;Sync;Bazzite;
+StartupNotify=false

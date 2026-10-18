@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=LG TV Control Panel
+GenericName=LG TV Control Panel
+Comment=Control LG OLED TV power, sync status, and HDMI inputs
+Exec=lgtv gui
+Icon=video-display
+Terminal=false
+Categories=Utility;HardwareSettings;
+Keywords=LG;TV;OLED;Power;Sync;Bazzite;
+StartupNotify=true

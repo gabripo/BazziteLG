@@ -17,6 +17,8 @@ echo
 printf "${BOLD}This will remove:${NC}\n"
 printf "  %s/{lgtv-startup,lgtv-shutdown,lgtv-sleep}.service\n" "$SERVICE_DIR"
 printf "  %s/\n" "$CONF_DIR"
+printf "  /usr/local/bin/lgtv\n"
+printf "  /usr/local/share/applications/lgtv-*.desktop\n"
 [[ -d "$OLD_VENV_DIR" ]] && printf "  %s/ (legacy venv)\n" "$OLD_VENV_DIR"
 selinux_enforcing && printf "  SELinux fcontext rules for the above paths\n"
 echo
@@ -37,6 +39,13 @@ info "Removing files"
 sudo rm -rf "$CONF_DIR"
 ok "$CONF_DIR"
 
+sudo rm -f /usr/local/bin/lgtv
+ok "/usr/local/bin/lgtv"
+
+sudo rm -f /usr/local/share/applications/lgtv-*.desktop
+cmd_exists update-desktop-database && sudo update-desktop-database /usr/local/share/applications 2>/dev/null || true
+ok "desktop entries"
+
 if [[ -d "$OLD_VENV_DIR" ]]; then
     sudo rm -rf "$OLD_VENV_DIR"
     ok "$OLD_VENV_DIR (legacy venv)"
@@ -44,11 +53,14 @@ fi
 
 if selinux_enforcing && cmd_exists semanage; then
     info "Removing SELinux fcontext rules"
-    sudo semanage fcontext -d "${CONF_DIR}/lgtv-on\.sh"  2>/dev/null && ok "lgtv-on.sh rule"  || true
-    sudo semanage fcontext -d "${CONF_DIR}/lgtv-off\.sh" 2>/dev/null && ok "lgtv-off.sh rule" || true
-    sudo semanage fcontext -d "${CONF_DIR}/lgtv\.py"     2>/dev/null && ok "lgtv.py rule"      || true
+    sudo semanage fcontext -d "${CONF_DIR}/lgtv-on\.sh"   2>/dev/null && ok "lgtv-on.sh rule"   || true
+    sudo semanage fcontext -d "${CONF_DIR}/lgtv-off\.sh"  2>/dev/null && ok "lgtv-off.sh rule"  || true
+    sudo semanage fcontext -d "${CONF_DIR}/lgtv\.py"      2>/dev/null && ok "lgtv.py rule"       || true
+    sudo semanage fcontext -d "${CONF_DIR}/lgtv-gui\.py"  2>/dev/null && ok "lgtv-gui.py rule"   || true
+    sudo semanage fcontext -d "${CONF_DIR}/lgtv-tray\.py" 2>/dev/null && ok "lgtv-tray.py rule"  || true
+    sudo semanage fcontext -d "/usr/local/bin/lgtv"       2>/dev/null && ok "lgtv cli rule"      || true
     # Legacy venv rule
-    sudo semanage fcontext -d "${OLD_VENV_DIR}/bin(/.*)?" 2>/dev/null && ok "legacy venv rule" || true
+    sudo semanage fcontext -d "${OLD_VENV_DIR}/bin(/.*)?" 2>/dev/null && ok "legacy venv rule"   || true
 fi
 
 echo
