@@ -166,6 +166,23 @@ Installed `.desktop` files in `/usr/local/share/applications/` allow easy Steam 
 - Select **Toggle LG TV Sync** or **LG TV Control Panel**.
 - Now you can toggle TV sync straight from your controller in Big Picture Mode!
 
+### 4. Decky Loader Quick Access Plugin (`decky-plugin/`)
+For the ultimate native Steam Gamepad UI integration on Bazzite, a Decky Loader plugin is included:
+- Press the **Quick Access (`...`)** button on your controller.
+- Select the **LG TV Control** tab.
+- **Toggle switch**: Instantly enable or pause auto-sync.
+- **Buttons**: Turn TV ON (Wake-on-LAN) or Turn TV OFF (Standby).
+- **Status & Info**: Shows current state, TV IP, MAC, and configured HDMI port.
+- **Steam Toasts**: On-screen native popups confirm state changes.
+
+To use the Decky plugin:
+1. Enable **Decky Loader** in **Bazzite Portal**.
+2. Copy or symlink `decky-plugin` into your Decky plugins directory:
+```bash
+mkdir -p ~/homebrew/plugins
+cp -r decky-plugin ~/homebrew/plugins/bazzite-lgtv
+```
+
 ---
 
 ## Changing the TV IP / HDMI input

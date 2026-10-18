@@ -1,0 +1,11 @@
+{
+  "name": "LG TV Control",
+  "author": "BazziteLG",
+  "flags": [],
+  "api_version": 1,
+  "version": "1.0.0",
+  "publish": {
+    "tags": ["utilities", "hardware", "display"],
+    "description": "Control LG OLED TV power and auto-sync on Bazzite Gaming HTPC"
+  }
+}

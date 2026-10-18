@@ -46,6 +46,13 @@ sudo rm -f /usr/local/share/applications/lgtv-*.desktop
 cmd_exists update-desktop-database && sudo update-desktop-database /usr/local/share/applications 2>/dev/null || true
 ok "desktop entries"
 
+for candidate in "$HOME/homebrew/plugins/bazzite-lgtv" "/homebrew/plugins/bazzite-lgtv" "/var/homebrew/plugins/bazzite-lgtv"; do
+    if [[ -d "$candidate" ]]; then
+        rm -rf "$candidate"
+        ok "Decky plugin removed ($candidate)"
+    fi
+done
+
 if [[ -d "$OLD_VENV_DIR" ]]; then
     sudo rm -rf "$OLD_VENV_DIR"
     ok "$OLD_VENV_DIR (legacy venv)"

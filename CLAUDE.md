@@ -36,6 +36,8 @@ Commands: `pair | on [input_id] [--auto] | off [--auto] | enable | disable | tog
 - `gui`: launches the couch-friendly GUI control panel (`scripts/lgtv-gui.py`, with Tkinter and kdialog/zenity fallbacks).
 - `lgtv`: `/usr/local/bin/lgtv` CLI wrapper installed to `$PATH`.
 - Desktop entries in `/usr/local/share/applications` for KDE launcher and Steam Gamepad UI integration.
+- `decky-plugin/`: Decky Loader plugin for Steam Quick Access Menu (`...`) controller control.
+
 
 `on`/`off` register with a stored client key then send a single SSAP request. `on` additionally sends `ssap://tv/switchInput` (payload `{"inputId": ...}`) after `turnOnScreen` when an input is set — the default comes from `tv_input`, a CLI arg overrides it per-run. `pair` does the same registration flow but waits for user approval on the TV and saves the returned key. `config` (sync, no network) reads/writes `tv_ip` and `tv_input` — interactive with no flags, or via `--ip`/`--input` (`none`/`''` clears the input).
 
