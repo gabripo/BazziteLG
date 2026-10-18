@@ -70,6 +70,8 @@ PROMPT     = json.dumps({"type": "response",   "payload": {"pairingType": "PROMP
 SUCCESS    = json.dumps({"type": "response",   "payload": {"returnValue": True}})
 ERROR      = json.dumps({"type": "error",      "payload": {"errorCode": "-500", "errorText": "fail"}})
 ALREADY    = json.dumps({"type": "error",      "payload": {"errorCode": "-102"}})
+BLACKLIST  = json.dumps({"type": "error", "id": "register_0", "payload": {},
+                         "error": "403 Pairing rejected: blacklisted certificate detected"})
 
 
 # ── WebSocket.send ────────────────────────────────────────────────────────────
@@ -176,6 +178,30 @@ async def test_pair_prompts_user(tmp_path, capsys):
          patch("lgtv.ws_connect", AsyncMock(return_value=ws)):
         await run("pair")
     assert "Approve" in capsys.readouterr().out
+
+
+async def test_pair_falls_back_to_unsigned_manifest(tmp_path):
+    ip = tmp_path / "tv_ip"
+    ip.write_text("192.168.1.100\n")
+    key = tmp_path / "client.key"
+    ws = make_ws(BLACKLIST, PROMPT, REGISTERED)
+    with patch.object(lgtv, "IP_FILE", ip), patch.object(lgtv, "KEY_FILE", key), \
+         patch("lgtv.ws_connect", AsyncMock(return_value=ws)):
+        await run("pair")
+    first, second = (json.loads(c.args[0])["payload"]["manifest"] for c in ws.send.call_args_list[:2])
+    assert "signatures" in first
+    assert "signatures" not in second and "signed" not in second
+    assert key.read_text().strip() == "test-key-123"
+
+
+async def test_on_falls_back_to_unsigned_manifest(tmp_path):
+    ip, key = setup_files(tmp_path)
+    ws = make_ws(BLACKLIST, REGISTERED, SUCCESS)
+    with patch.object(lgtv, "IP_FILE", ip), patch.object(lgtv, "KEY_FILE", key), \
+         patch("lgtv.ws_connect", AsyncMock(return_value=ws)):
+        await run("on")
+    cmd = json.loads(ws.send.call_args_list[2].args[0])
+    assert cmd["uri"] == "ssap://com.webos.service.tvpower/power/turnOnScreen"
 
 
 # ── run() — on/off ────────────────────────────────────────────────────────────

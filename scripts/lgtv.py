@@ -86,6 +86,11 @@ MANIFEST = {
     },
 }
 
+# webOS 26+ firmware blacklists the 2014 "test-signing-cert" above and rejects
+# the signed manifest before showing a prompt.  The unsigned variant is still
+# accepted and keeps every permission this script needs (power, input, toast).
+UNSIGNED_MANIFEST = {k: v for k, v in MANIFEST.items() if k not in ("signatures", "signed")}
+
 
 # ---------------------------------------------------------------------------
 # Minimal WebSocket client (standard library only)
@@ -227,17 +232,21 @@ async def _session(ws: WebSocket, mode: str, client_key: str | None, input_id: s
     caller's retry loop can attempt a reconnect.  All other failures call
     sys.exit() directly — they are not transient and should not be retried.
     """
-    try:
+    async def register(manifest: dict) -> None:
         await ws.send(json.dumps({
             "type": "register",
             "id": "register_0",
             "payload": {
                 "client-key": client_key,
                 "forcePairing": False,
-                "manifest": MANIFEST,
+                "manifest": manifest,
                 "pairingType": "PROMPT",
             },
         }))
+
+    try:
+        manifest = MANIFEST
+        await register(manifest)
 
         recv_timeout = 60 if mode == "pair" else TIMEOUT
         while True:
@@ -263,6 +272,10 @@ async def _session(ws: WebSocket, mode: str, client_key: str | None, input_id: s
                 break
 
             if mtype == "error":
+                if manifest is MANIFEST and "blacklisted certificate" in str(msg.get("error", "")):
+                    manifest = UNSIGNED_MANIFEST
+                    await register(manifest)
+                    continue
                 sys.exit(f"Registration error: {msg}")
 
         if mode == "pair":
