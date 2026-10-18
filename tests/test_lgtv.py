@@ -893,3 +893,34 @@ def test_off_tpl_checks_disabled():
     assert "/etc/lgtvcontrol/disabled" in content
     assert "--auto" in content
 
+
+# ── uninstall.sh comprehensive coverage ───────────────────────────────────────
+
+_UNINSTALL_SH = pathlib.Path(__file__).parent.parent / "uninstall.sh"
+
+
+def test_uninstall_covers_all_services():
+    content = _UNINSTALL_SH.read_text()
+    assert "lgtv-startup" in content
+    assert "lgtv-shutdown" in content
+    assert "lgtv-sleep" in content
+    assert "systemctl stop" in content
+    assert "systemctl disable" in content
+    assert "daemon-reload" in content
+
+
+def test_uninstall_covers_legacy_paths():
+    content = _UNINSTALL_SH.read_text()
+    assert "/opt/lgtvcontrol" in content
+    assert ".aiopylgtv.sqlite" in content
+    assert "/etc/lgtvcontrol" in content
+    assert "/usr/local/bin/lgtv" in content
+    assert "bazzite-lgtv" in content
+
+
+def test_uninstall_covers_selinux_rules():
+    content = _UNINSTALL_SH.read_text()
+    assert "semanage fcontext -d" in content
+    assert "restorecon" in content
+
+
