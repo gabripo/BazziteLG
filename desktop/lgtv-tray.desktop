@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=LG TV Tray
+GenericName=LG TV Tray Applet
+Comment=System tray icon to toggle LG TV auto-sync and control TV power
+Exec=lgtv tray
+Icon=video-display
+Terminal=false
+Categories=Utility;HardwareSettings;
+Keywords=LG;TV;OLED;Tray;Sync;Bazzite;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-phase=2

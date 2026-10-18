@@ -202,6 +202,21 @@ if [[ -d "$SCRIPT_DIR/desktop" ]]; then
     cmd_exists update-desktop-database && sudo update-desktop-database "$APPS_DIR" 2>/dev/null || true
 fi
 
+# Start the tray applet automatically in every desktop session
+if [[ -f "$SCRIPT_DIR/desktop/lgtv-tray.desktop" ]]; then
+    sudo mkdir -p /etc/xdg/autostart
+    sudo cp "$SCRIPT_DIR/desktop/lgtv-tray.desktop" /etc/xdg/autostart/lgtv-tray.desktop
+    sudo chmod 644 /etc/xdg/autostart/lgtv-tray.desktop
+    ok "Tray autostart (/etc/xdg/autostart/lgtv-tray.desktop)"
+
+    # Autostart only fires at the next login — start it now in a desktop session.
+    # lgtv-tray.py holds a single-instance lock, so this never duplicates the icon.
+    if [[ -n "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]]; then
+        setsid /usr/local/bin/lgtv tray > /dev/null 2>&1 < /dev/null &
+        ok "Tray applet started"
+    fi
+fi
+
 # ---------------------------------------------------------------------------
 # SELinux file contexts
 # ---------------------------------------------------------------------------

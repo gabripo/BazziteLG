@@ -155,6 +155,8 @@ Run `lgtv gui` from the terminal, or launch **LG TV Control Panel** from the KDE
 
 ### 2. Desktop System Tray Applet with Tooltip (`scripts/lgtv-tray.py`)
 In Bazzite Desktop Mode (KDE Plasma):
+- Starts automatically on login (installed to `/etc/xdg/autostart/lgtv-tray.desktop`). Start it manually with `lgtv tray` or **LG TV Tray** from the application menu; only one instance runs at a time.
+- Requires a Qt binding (PySide6 ships with Bazzite) or PyGObject with AppIndicator.
 - Displays a TV icon in the system tray panel.
 - **Hover Tooltip**: Shows current status (e.g., `LG TV Control: ACTIVATED (Auto-power sync enabled)`).
 - **Left-Click**: Instantly toggles between Activated and Deactivated states.

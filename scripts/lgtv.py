@@ -29,7 +29,7 @@ RETRY_DELAY    = 5   # seconds between attempts
 INPUT_SWITCH_DELAY = 1.0   # wait for the screen to come up before switching input
 
 USAGE = (
-    "Usage: lgtv.py pair|on [input_id] [--auto]|off [--auto]|enable|disable|toggle|status|gui|config "
+    "Usage: lgtv.py pair|on [input_id] [--auto]|off [--auto]|enable|disable|toggle|status|gui|tray|config "
     "[--show|--ip IP|--input ID]"
 )
 
@@ -570,14 +570,15 @@ def main() -> None:
     if mode == "status":
         status_command()
         return
-    if mode == "gui":
-        gui_script = Path(__file__).parent / "lgtv-gui.py"
-        if not gui_script.exists():
-            gui_script = CONF_DIR / "lgtv-gui.py"
-        if gui_script.exists():
-            os.execv(sys.executable, [sys.executable, str(gui_script)] + args[1:])
+    if mode in ("gui", "tray"):
+        name = f"lgtv-{mode}.py"
+        script = Path(__file__).parent / name
+        if not script.exists():
+            script = CONF_DIR / name
+        if script.exists():
+            os.execv(sys.executable, [sys.executable, str(script)] + args[1:])
         else:
-            sys.exit(f"GUI script not found: {gui_script}")
+            sys.exit(f"{mode.upper()} script not found: {script}")
 
     if mode not in ("pair", "on", "off"):
         sys.exit(USAGE)

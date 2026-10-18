@@ -30,10 +30,11 @@ The project has one real source file: `scripts/lgtv.py`. Everything else is glue
 
 **`scripts/lgtv.py`** — standalone Python script, zero external dependencies. Implements a minimal WebSocket client from scratch (RFC 6455 framing, TLS via `ssl`, masking, all frame sizes) because the TV requires WSS on port 3001. Uses LG's SSAP protocol over that WebSocket. Runtime config is read from `/etc/lgtvcontrol/`: `tv_ip`, `client.key`, `tv_input` (optional HDMI input to switch to after power-on), and `tv_mac` (optional, for WoL).
 
-Commands: `pair | on [input_id] [--auto] | off [--auto] | enable | disable | toggle | status | gui | config [--show|--ip IP|--input ID]`.
+Commands: `pair | on [input_id] [--auto] | off [--auto] | enable | disable | toggle | status | gui | tray | config [--show|--ip IP|--input ID]`.
 - `enable` / `disable` / `toggle`: creates or deletes `/etc/lgtvcontrol/disabled`. When deactivated, automated hooks (`lgtv-on.sh` / `lgtv-off.sh` or `--auto`) skip all TV power commands instantly with exit code 0.
 - `status`: prints active/deactivated state, TV IP, MAC, input, pairing status, and systemd service states.
 - `gui`: launches the couch-friendly GUI control panel (`scripts/lgtv-gui.py`, with Tkinter and kdialog/zenity fallbacks).
+- `tray`: launches the system tray applet (`scripts/lgtv-tray.py`, Qt/PySide6 with AppIndicator fallback, single-instance lock). Autostarted via `/etc/xdg/autostart/lgtv-tray.desktop`.
 - `lgtv`: `/usr/local/bin/lgtv` CLI wrapper installed to `$PATH`.
 - Desktop entries in `/usr/local/share/applications` for KDE launcher and Steam Gamepad UI integration.
 - `decky-plugin/`: Decky Loader plugin for Steam Quick Access Menu (`...`) controller control.

@@ -972,3 +972,32 @@ async def test_on_normalizes_legacy_input(tmp_path):
         await run("on")
     switch = json.loads(ws.send.call_args_list[2].args[0])
     assert switch["payload"] == {"inputId": "HDMI_3"}
+
+
+# ── tray applet & desktop entries ─────────────────────────────────────────────
+
+_REPO = pathlib.Path(__file__).parent.parent
+
+
+@pytest.mark.parametrize("script", ["lgtv-tray.py", "lgtv-gui.py", "lgtv-list-inputs.py", "lgtv-diagnose.py"])
+def test_helper_scripts_compile(script):
+    path = _REPO / "scripts" / script
+    compile(path.read_text(), str(path), "exec")
+
+
+@pytest.mark.parametrize("entry", sorted((_REPO / "desktop").glob("*.desktop")), ids=lambda p: p.name)
+def test_desktop_entries_valid(entry):
+    lines = entry.read_text().splitlines()
+    assert lines[0] == "[Desktop Entry]"
+    keys = dict(line.split("=", 1) for line in lines[1:] if "=" in line)
+    assert keys["Type"] == "Application"
+    assert keys["Exec"].startswith("lgtv ")
+
+
+def test_tray_command_execs_tray_script(monkeypatch):
+    monkeypatch.setattr("sys.argv", ["lgtv.py", "tray"])
+    with patch("os.execv", side_effect=SystemExit(0)) as mock_execv:   # execv never returns
+        with pytest.raises(SystemExit):
+            lgtv.main()
+    argv = mock_execv.call_args.args[1]
+    assert argv[1].endswith("lgtv-tray.py")

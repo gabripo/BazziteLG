@@ -19,6 +19,7 @@ printf "  Services:    %s/{lgtv-startup,lgtv-shutdown,lgtv-sleep}.service\n" "$S
 printf "  Scripts/Cfg: %s/\n" "$CONF_DIR"
 printf "  CLI Command: /usr/local/bin/lgtv\n"
 printf "  Desktop:     /usr/local/share/applications/lgtv-*.desktop\n"
+printf "  Autostart:   /etc/xdg/autostart/lgtv-tray.desktop\n"
 printf "  Decky:       ~/homebrew/plugins/bazzite-lgtv\n"
 [[ -d "$OLD_VENV_DIR" ]] && printf "  Legacy Venv: %s/\n" "$OLD_VENV_DIR"
 [[ -f "$HOME/.aiopylgtv.sqlite" ]] && printf "  Legacy DB:   %s/.aiopylgtv.sqlite\n" "$HOME"
@@ -28,7 +29,7 @@ read -rp "$(printf "${BOLD}Continue? [y/N]: ${NC}")" answer
 [[ "$answer" =~ ^[Yy]([Ee][Ss])?$ ]] || { echo "Aborted."; exit 0; }
 
 info "Stopping running processes and services"
-pkill -f "lgtv-tray.py" 2>/dev/null || true
+pkill -f "lgtv-tray\.py" 2>/dev/null || true
 sudo pkill -f "/etc/lgtvcontrol" 2>/dev/null || true
 
 for svc in lgtv-startup lgtv-shutdown lgtv-sleep; do
@@ -53,6 +54,7 @@ ok "/usr/local/bin/lgtv"
 
 # Remove desktop entries from all standard paths
 sudo rm -f /usr/local/share/applications/lgtv-*.desktop 2>/dev/null || true
+sudo rm -f /etc/xdg/autostart/lgtv-tray.desktop 2>/dev/null || true
 rm -f "$HOME/.local/share/applications/lgtv-*.desktop" 2>/dev/null || true
 cmd_exists update-desktop-database && sudo update-desktop-database /usr/local/share/applications 2>/dev/null || true
 cmd_exists update-desktop-database && update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
